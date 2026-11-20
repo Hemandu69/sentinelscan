@@ -1,0 +1,46 @@
+# Private configuration and credentials
+.env
+.env.*
+*.env
+.npmrc
+*.pem
+*.key
+*.pfx
+*.p12
+credentials*
+secrets/
+*.secret
+
+# Dependencies and generated output
+node_modules/
+.next/
+dist/
+build/
+out/
+coverage/
+*.tsbuildinfo
+*.log
+
+# Local databases, volumes and provider artifacts
+*.db
+*.db-*
+*.sqlite*
+*.sql
+*.dump
+*.backup
+pgdata/
+data/
+volumes/
+docker-volumes/
+.zap/
+*.session*
+*.har
+evidence/
+scan-evidence/
+scan-results/
+reports/
+
+# Independent component checkouts
+sentinelscan-api/
+sentinelscan-infrastructure/
+sentinelscan-web/
