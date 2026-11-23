@@ -83,11 +83,17 @@ function createRotation({
     compose('up','-d','--no-deps','--force-recreate','--pull','never','--wait','--wait-timeout','180','zap');
     if (container('zap') === oldZap || container('postgres') !== pg || container('juice-shop') !== juice) fail('Unexpected container identity or restart.');
     if (compose('port','zap','8090') !== '127.0.0.1:8090') fail('Unexpected ZAP binding after recreation.');
-    // ZAP can log configuration values at startup. Compare in memory and never print the log.
-    const output = run('docker', ['--context', 'desktop-linux', 'logs', container('zap').split(' ')[0]], { cwd: root, encoding: 'utf8', timeout: 60000, windowsHide: true, maxBuffer: 64 * 1024 * 1024 });
-    if (output.status !== 0) fail('The new container log could not be checked for the credential. Treat the new key as unverified.');
-    if ([output.stdout, output.stderr].some(text => (text ?? '').includes(fresh))) fail('The new key appears in the container log. Treat it as exposed and stop using it.');
+    // Checks the log and process arguments in memory. Their content is never printed.
+    function exposed() {
+      for (const [view, label] of [['logs', 'log'], ['top', 'process arguments']]) {
+        const output = run('docker', ['--context', 'desktop-linux', view, container('zap').split(' ')[0]], { cwd: root, encoding: 'utf8', timeout: 60000, windowsHide: true, maxBuffer: 64 * 1024 * 1024 });
+        if (output.status !== 0) fail('The new container ' + label + ' could not be checked for the credential. Treat the new key as unverified.');
+        if ([output.stdout, output.stderr].some(text => (text ?? '').includes(fresh))) fail('The new key appears in the container ' + label + '. Treat it as exposed and stop using it.');
+      }
+    }
+    exposed();
     if (await check(origin+versionPath,fresh) !== '2.17.0') fail('Unexpected ZAP version after rotation.');
+    exposed();
     log('Rotation verified. Restart the Fastify process to reload its key.');
   };
 }

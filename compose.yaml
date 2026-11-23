@@ -24,10 +24,17 @@ services:
     entrypoint: ["/bin/sh", "-ec"]
     command:
       - >-
+        umask 077;
+        printf 'api.key=%s\n' "$${ZAP_API_KEY}" > /dev/shm/zap-key.properties;
+        printf 'X-ZAP-API-Key: %s\n' "$${ZAP_API_KEY}" > /dev/shm/zap-key.header;
+        unset ZAP_API_KEY;
         exec /zap/zap.sh -daemon -host 0.0.0.0 -port 8090 -Xmx1536m
+        -addonuninstall domxss
+        -configfile /dev/shm/zap-key.properties
         -config scanner.threadPerHost=2
         -config scanner.hostPerScan=1
-        -config "api.key=$${ZAP_API_KEY}"
+        -config scanner.delayInMs=20
+        -config pscan.maxAlertsPerRule=10
         -config api.disablekey=false
         -config api.noKeyForSafeOps=false
         -config api.reportPermErrors=true
@@ -45,7 +52,7 @@ services:
           create_host_path: false
     networks: [local]
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS --max-time 4 -H \"X-ZAP-API-Key: $$ZAP_API_KEY\" http://127.0.0.1:8090/JSON/core/view/version/ | grep -q '\"version\"'"]
+      test: ["CMD-SHELL", "curl -fsS --max-time 4 -H @/dev/shm/zap-key.header http://127.0.0.1:8090/JSON/core/view/version/ | grep -q '\"version\"'"]
       interval: 10s
       timeout: 6s
       start_period: 60s

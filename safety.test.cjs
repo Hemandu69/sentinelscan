@@ -144,7 +144,8 @@ function rotation(t, { images = ['sha256:' + id('e')], imageName = 'docker.io/za
       fs.renameSync(path.join(root, '.env.rotation'), path.join(root, '.env'));
       return ok('');
     }
-    if (line.includes(' logs ')) return { status: logStatus, stdout: leak ? 'x ' + /ZAP_API_KEY=(.*)/.exec(fs.readFileSync(path.join(root, '.env'), 'utf8'))[1] : 'clean', stderr: '' };
+    if (line.includes(' top ')) return { status: 0, stdout: leak === 'top' ? 'java ' + /ZAP_API_KEY=(.*)/.exec(fs.readFileSync(path.join(root, '.env'), 'utf8'))[1] : 'java', stderr: '' };
+    if (line.includes(' logs ')) return { status: logStatus, stdout: leak === 'log' ? 'x ' + /ZAP_API_KEY=(.*)/.exec(fs.readFileSync(path.join(root, '.env'), 'utf8'))[1] : 'clean', stderr: '' };
     if (line.includes(' info ')) return ok('linux');
     if (line.includes(' port zap ')) return ok('127.0.0.1:8090');
     if (line.includes('config --images')) return ok(imageName);
@@ -207,7 +208,7 @@ test('rotation stops before any write when the log override is absent', async t 
   }
 });
 test('rotation reports a key found in the container log without printing it', async t => {
-  for (const [options, message] of [[{ leak: true }, /appears in the container log/], [{ logStatus: 1 }, /could not be checked/]]) {
+  for (const [options, message] of [[{ leak: 'log' }, /appears in the container log/], [{ leak: 'top' }, /appears in the container process arguments/], [{ logStatus: 1 }, /could not be checked/]]) {
     const f = rotation(t, options);
     await assert.rejects(f.rotate(), error => message.test(error.message) && !/[a-f0-9]{64}/.test(error.message));
     assert.equal(f.checked.length, 0);
@@ -219,6 +220,18 @@ test('ZAP logging override keeps defaults, scan lifecycle logging and hides conf
   for (const line of ['logger.abstractparam.name = org.parosproxy.paros.common.AbstractParam', 'logger.abstractparam.level = warn',
     'logger.paros.level = info', 'logger.zap.level = info', 'rootLogger.appenderRef.stdout.ref = stdout'])
     assert.ok(lines.includes(line), line);
+});
+
+test('compose keeps the key out of process arguments and preserves the approved configuration', () => {
+  const compose = fs.readFileSync(path.join(__dirname, 'compose.yaml'), 'utf8').replace(/\r\n/g, '\n');
+  assert.doesNotMatch(compose, /-config "?api\.key/);
+  for (const line of compose.split('\n').filter(text => text.includes('$${ZAP_API_KEY}')))
+    assert.match(line, /^ {8}printf '(api\.key=|X-ZAP-API-Key: )%s\\n' "\$\$\{ZAP_API_KEY\}" > \/dev\/shm\/zap-key\.(properties|header);$/);
+  assert.ok(compose.indexOf('unset ZAP_API_KEY;') < compose.indexOf('exec /zap/zap.sh'));
+  assert.match(compose, /umask 077;/);
+  for (const part of ['image: docker.io/zaproxy/zap-stable:2.17.0', 'mem_limit: 3072m', '-Xmx1536m', '-addonuninstall domxss', 'scanner.delayInMs=20',
+    'pscan.maxAlertsPerRule=10', 'scanner.threadPerHost=2', 'scanner.hostPerScan=1', 'api.disablekey=false', '-H @/dev/shm/zap-key.header'])
+    assert.ok(compose.includes(part), part);
 });
 
 function sampler(overrides = {}) {

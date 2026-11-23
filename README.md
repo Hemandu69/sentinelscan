@@ -5,10 +5,10 @@ Docker Compose project `sentinelscan-infrastructure` for Docker Desktop in Linux
 | Service | Host address | Network address | Notes |
 |---|---|---|---|
 | postgres | 127.0.0.1:5432 | postgres:5432 | Data in the `pgdata` named volume |
-| zap | 127.0.0.1:8090 | zap:8090 | `zap-stable:2.17.0`, 3072 MiB limit, 1536 MiB heap, 2 threads per host, 1 host per scan |
+| zap | 127.0.0.1:8090 | zap:8090 | `zap-stable:2.17.0`, 3072 MiB limit, 1536 MiB heap, 2 threads per host, 1 host per scan, DOM XSS add-on uninstalled, 20 ms delay, passive limit 10 per rule |
 | juice-shop | 127.0.0.1:3001 | juice-shop:3000 | Scanner target is always `http://juice-shop:3000/` |
 
-These are configured values. Running containers may predate them, so read back the effective values during an approved integration window. DOM XSS rule 40026 exclusion and a one-request-per-second limit are proposals and are not configured.
+These are configured values. Running containers may predate them, so read back the effective values during an approved integration window. DOM XSS testing is therefore excluded and must be disclosed. A one-request-per-second limit is not configured. The key reaches ZAP through a private in-memory file, never through process arguments.
 
 ## Local setup
 
