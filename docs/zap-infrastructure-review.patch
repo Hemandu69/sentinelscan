@@ -1,0 +1,126 @@
+diff --git a/compose.yaml b/compose.yaml
+index 7b9f82f..b4ce924 100644
+--- a/compose.yaml
++++ b/compose.yaml
+@@ -17,7 +17,7 @@ services:
+       timeout: 4s
+       retries: 12
+   zap:
+-    image: ghcr.io/zaproxy/zaproxy:stable
++    image: docker.io/zaproxy/zap-stable:2.17.0
+     mem_limit: 3072m
+     environment:
+       ZAP_API_KEY: ${ZAP_API_KEY:?Set ZAP_API_KEY in .env}
+diff --git a/observe-zap-resources.cjs b/observe-zap-resources.cjs
+index 17e6e18..ea0bee0 100644
+--- a/observe-zap-resources.cjs
++++ b/observe-zap-resources.cjs
+@@ -1,9 +1,30 @@
+-// One read-only sample of the existing Compose service. Run from Windows with Node 24.
++// Read-only samples of the existing Compose service. Run from Windows with Node 24.
+ 'use strict';
+ const { execFileSync } = require('node:child_process');
+ const { readFileSync } = require('node:fs');
+ const { join } = require('node:path');
+-const { parseEnv } = require('node:util');
++const { parseEnv, parseArgs } = require('node:util');
++const { setTimeout: sleep } = require('node:timers/promises');
++
++function options(args) {
++  const { values } = parseArgs({ args, options: {
++    count: { type: 'string', default: '1' },
++    'interval-seconds': { type: 'string', default: '10' },
++  } });
++  function integer(value, min, max) {
++    const n = Number(value);
++    if (!/^[0-9]+$/.test(value) || !Number.isSafeInteger(n) || n < min || n > max) throw Error();
++    return n;
++  }
++  return { count: integer(values.count, 1, 120), interval: integer(values['interval-seconds'], 1, 60) };
++}
++
++async function observe({ count, interval }, sample, wait = sleep) {
++  for (let i = 0; i < count; i++) {
++    await sample(i + 1);
++    if (i + 1 < count) await wait(interval * 1000);
++  }
++}
+ 
+ function docker(...args) {
+   return execFileSync('docker', ['--context', 'desktop-linux', ...args], {
+@@ -25,15 +46,16 @@ async function view(path, key) {
+   }
+   return JSON.parse(Buffer.concat(chunks).toString('utf8'));
+ }
+-async function main() {
++async function sample() {
+   let phase = 'Docker service lookup';
++  console.log('Sample UTC', new Date().toISOString());
+   try {
+     const id = docker('compose', 'ps', '-a', '-q', 'zap');
+     if (!/^[a-f0-9]{12,64}$/.test(id)) throw Error();
+     phase = 'Docker inspect';
+     const state = docker('inspect', '--format',
+       '{{.State.Status}} {{.State.Health.Status}} {{.State.OOMKilled}} {{.HostConfig.Memory}} {{.HostConfig.MemoryReservation}}', id);
+-    console.log('UTC', new Date().toISOString(), 'container', id);
++    console.log('Container', id);
+     console.log('State / health / OOMKilled / memory limit bytes / reservation bytes:', state);
+     if (!state.startsWith('running healthy ')) throw Error();
+     phase = 'Docker stats';
+@@ -56,8 +78,20 @@ async function main() {
+     }
+     console.log('Active runs listed:', inventory.scans.length);
+   } catch {
+-    console.error(phase + ' unavailable or unexpected. Sample stopped.');
+-    process.exitCode = 1;
++    throw new Error(phase + ' unavailable or unexpected. Sampling stopped.');
+   }
+ }
+-main();
++if (require.main === module) {
++  let settings;
++  try {
++    settings = options(process.argv.slice(2));
++  } catch {
++    console.error('Usage: node observe-zap-resources.cjs [--count 1..120] [--interval-seconds 1..60]');
++    process.exitCode = 2;
++  }
++  if (settings) observe(settings, sample).catch(error => {
++    console.error(error.message);
++    process.exitCode = 1;
++  });
++}
++module.exports = { options, observe };
+diff --git a/observe-zap-resources.test.cjs b/observe-zap-resources.test.cjs
+new file mode 100644
+index 0000000..aabbaa2
+--- /dev/null
++++ b/observe-zap-resources.test.cjs
+@@ -0,0 +1,27 @@
++'use strict';
++const test = require('node:test');
++const assert = require('node:assert/strict');
++const { options, observe } = require('./observe-zap-resources.cjs');
++
++test('default samples once and accepts bounded explicit options', () => {
++  assert.deepEqual(options([]), { count: 1, interval: 10 });
++  assert.deepEqual(options(['--count=120','--interval-seconds','60']), { count: 120, interval: 60 });
++});
++test('invalid arguments fail before sampling', () => {
++  for (const args of [['--count','0'], ['--count','121'], ['--count','1.2'],
++    ['--interval-seconds','0'], ['--interval-seconds','61'], ['--unknown'], ['extra']]) {
++    assert.throws(() => options(args));
++  }
++});
++test('waits between completed samples only', async () => {
++  const events = [];
++  await observe({ count: 3, interval: 2 }, async i => { events.push(i); }, async ms => { events.push(ms); });
++  assert.deepEqual(events, [1, 2000, 2, 2000, 3]);
++});
++test('stops on first failure', async () => {
++  let calls = 0;
++  await assert.rejects(observe({ count: 3, interval: 1 }, async () => {
++    if (++calls === 2) throw Error('fixture outage');
++  }, async () => {}), /fixture outage/);
++  assert.equal(calls, 2);
++});

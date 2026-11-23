@@ -1,13 +1,14 @@
 # Architecture
 
-One Windows host runs a shared workspace. The planned Next.js frontend communicates with Fastify over loopback. Fastify owns consent, assessment records, result validation and Prisma transactions. Docker Compose publishes PostgreSQL and ZAP on loopback. Only the backend needs the database connection and ZAP credential.
+One Windows host runs a shared workspace. The Next.js Watchtower frontend communicates with Fastify 5 over loopback. Fastify owns consent, assessment records, result validation and Prisma transactions. PostgreSQL 17 stores the workspace. The API supplies ZAP credentials server-side. Infrastructure diagnostics run separately from the browser.
 
 | Component | Host interface | Current role |
 |---|---|---|
-| Web | 127.0.0.1:3000 (planned) | Direct-entry dashboard with no login screen |
+| Web | 127.0.0.1:3000 | Dashboard, website details, assessment records, findings and print view |
 | API | 127.0.0.1:4000 | Local HTTP service |
 | PostgreSQL | 127.0.0.1:5432 | Application database and schema named `sentinelscan`; data lives in a named volume |
 | ZAP | 127.0.0.1:8090 | Authenticated provider reads from the configured daemon |
+| Juice Shop | 127.0.0.1:3001 | Authorized demonstration site. Containers reach it at http://juice-shop:3000/. |
 
 ## Data ownership
 
@@ -16,7 +17,8 @@ One Windows host runs a shared workspace. The planned Next.js frontend communica
 | targets | Stores the canonical URL and display name. Archiving preserves history. |
 | assessments | Belongs to a target. Captures the authorized URL, consent timestamp and wording version, source, status and execution timestamps. |
 | findings | Belongs to an assessment. A unique assessment/fingerprint pair supports idempotent persistence. |
-| reports | Belongs to an assessment. The schema reserves metadata for report snapshots. PDF generation remains planned. |
+| assessment_runs | Additive migration. One Spider and one active receipt per assessment. A unique session, kind and ID tuple prevents reuse across assessments. |
+| reports | Belongs to an assessment. Reserved snapshot metadata. The current print view reconciles live application records and uses the browser print engine without writing this table. |
 
 ## Operator-run design
 
