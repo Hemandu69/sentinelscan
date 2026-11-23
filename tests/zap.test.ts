@@ -412,3 +412,8 @@ test("malformed scan progress is rejected and unusable hosts stay unknown", asyn
     await expect(reply({ scanProgress }).scanProgress("0")).rejects.toThrow("ZAP_MALFORMED_RESPONSE");
   expect((await reply({ scanProgress: ["juice-shop", { HostProcess: [] }] }).scanProgress("0")).hosts[0].origin).toBeNull();
 });
+test("an unsaved provider session is refused with its own code", async () => {
+  await expect(reply({ sessionLocation: "" }).sessionLocation()).rejects.toThrow("ZAP_SESSION_NOT_SAVED");
+  await expect(reply({}).sessionLocation()).rejects.toThrow("ZAP_MALFORMED_RESPONSE");
+  expect(await reply({ sessionLocation: "/zap/a.session" }).sessionLocation()).toBe("/zap/a.session");
+});

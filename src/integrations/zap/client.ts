@@ -120,8 +120,11 @@ export function createZapClient(
     async sessionLocation() {
       const result = await view(
         "core/view/sessionLocation",
-        z.object({ sessionLocation: z.string().trim().min(1).max(2048) }),
+        z.object({ sessionLocation: z.string().trim().max(2048) }),
       );
+      // ZAP reports an empty location until a session is created and saved.
+      if (!result.sessionLocation)
+        throw new ApiError(409, "ZAP_SESSION_NOT_SAVED");
       return result.sessionLocation;
     },
     async inspectRuns(kind: "spider" | "active") {
