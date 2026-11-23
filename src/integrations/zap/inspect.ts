@@ -24,6 +24,7 @@ async function inspect() {
         id,
         outcome: matches[0].outcome,
         ...(await zap.inspectDemoScope(kind, id)),
+        ...(kind === "active" ? await zap.scanProgress(id) : {}),
       }),
     );
     return;

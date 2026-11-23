@@ -217,12 +217,14 @@ export function createZapClient(
         ).messagesIds;
       const ids = await messageIds();
       if (new Set(ids).size !== ids.length) throw malformed();
-      // Bound review work. A partial sample must never establish scope.
-      if (ids.length > 256)
-        return { evidence: "REVIEW_LIMIT", count: ids.length };
+      // Read every message or none. The ID schema above bounds the total, and a
+      // deadline bounds the time. A partial sample must never establish scope.
       const urls: string[] = [];
-      const deadline = Date.now() + 30000;
-      for (const id of ids) {
+      const deadline = Date.now() + 300000;
+      let next = 0,
+        outside = false,
+        stopped = false;
+      async function readOne(id: string) {
         if (Date.now() > deadline) throw new ApiError(504, "ZAP_TIMEOUT");
         const { message } = await view(
           "core/view/message",
@@ -242,13 +244,78 @@ export function createZapClient(
           .filter((line) => /^host:/i.test(line))
           .map((line) => line.slice(5).trim().toLowerCase());
         if (hosts.some((host) => host !== "juice-shop:3000"))
-          return { evidence: "OUT_OF_SCOPE", count: ids.length };
+          outside = true;
         urls.push(hosts.length > 1 ? "" : uri);
       }
+      await Promise.all(
+        Array.from({ length: 4 }, async () => {
+          try {
+            while (!stopped && !outside && next < ids.length)
+              await readOne(ids[next++]);
+          } catch (error) {
+            stopped = true;
+            throw error;
+          }
+        }),
+      );
+      if (outside) return { evidence: "OUT_OF_SCOPE", count: ids.length };
       const after = new Set(await messageIds());
       if (after.size !== ids.length || ids.some((id) => !after.has(id)))
         throw new ApiError(409, "OBSERVATION_CHANGED");
       return classify(urls);
+    },
+    // Describes what ZAP reports per host and rule. This is an observation and
+    // never an outcome: a scan stopped during its last rules can look complete.
+    async scanProgress(scanId: string) {
+      z.string()
+        .regex(/^\d{1,12}$/)
+        .parse(scanId);
+      const { scanProgress } = await view(
+        "ascan/view/scanProgress",
+        z.object({
+          scanProgress: z
+            .array(
+              z.union([
+                z.string().max(2048),
+                z.object({
+                  HostProcess: z
+                    .array(
+                      z.object({ Plugin: z.array(z.string()).min(4).max(16) }),
+                    )
+                    .max(1024),
+                }),
+              ]),
+            )
+            .max(128),
+        }),
+        { scanId },
+      );
+      if (scanProgress.length % 2) throw malformed();
+      const hosts = [];
+      for (let i = 0; i < scanProgress.length; i += 2) {
+        const host = scanProgress[i],
+          rules = scanProgress[i + 1];
+        if (typeof host !== "string" || typeof rules === "string")
+          throw malformed();
+        const counts = { complete: 0, skipped: 0, running: 0, pending: 0, unknown: 0 };
+        for (const { Plugin } of rules.HostProcess) {
+          const status = Plugin[3];
+          if (status === "Complete") counts.complete++;
+          else if (status === "Pending") counts.pending++;
+          else if (/^\d{1,3}%$/.test(status)) counts.running++;
+          else if (/^Skipped\b/.test(status)) counts.skipped++;
+          else counts.unknown++;
+        }
+        const origin = URL.canParse(host) ? new URL(host) : null;
+        hosts.push({
+          origin:
+            origin && ["http:", "https:"].includes(origin.protocol)
+              ? origin.origin
+              : null,
+          rules: counts,
+        });
+      }
+      return { hosts };
     },
     async readAttributedFindings(scanId: string, authorizedUrl: string) {
       const target = new URL(authorizedUrl);

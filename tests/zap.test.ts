@@ -358,3 +358,55 @@ test.each([
     });
   },
 );
+
+const inScope: (id: string) => string = () => "GET http://juice-shop:3000/a HTTP/1.1\r\nHost: juice-shop:3000";
+function messages(count: number, header = inScope, change = false) {
+  const read: string[] = [];
+  let lists = 0;
+  const client = createZapClient(key, 1000, async (input) => {
+    const url = new URL(String(input));
+    if (url.pathname.endsWith("/messagesIds/"))
+      return Response.json({
+        messagesIds: Array.from({ length: count + (change && lists++ ? 1 : 0) }, (_, i) => String(i)),
+      });
+    const id = url.searchParams.get("id")!;
+    read.push(id);
+    const requestHeader = header(id);
+    return requestHeader ? Response.json({ message: { id, requestHeader } }) : new Response(null, { status: 503 });
+  });
+  return { client, read };
+}
+test("active scope reads every attributed message beyond the former limit exactly once", async () => {
+  const { client, read } = messages(1500);
+  expect(await client.inspectDemoScope("active", "0")).toEqual({ evidence: "OBSERVED_TARGET_ORIGIN", count: 1500 });
+  expect(read).toHaveLength(1500);
+  expect(new Set(read).size).toBe(1500);
+});
+test("one message outside the target decides the whole scan", async () => {
+  const { client } = messages(400, (id) => `GET http://${id === "399" ? "elsewhere.invalid" : "juice-shop:3000"}/ HTTP/1.1`);
+  expect((await client.inspectDemoScope("active", "0")).evidence).toBe("OUT_OF_SCOPE");
+});
+test("a failed read or a changed list never yields partial scope", async () => {
+  await expect(messages(400, (id) => (id === "200" ? "" : "GET http://juice-shop:3000/ HTTP/1.1")).client.inspectDemoScope("active", "0")).rejects.toThrow("ZAP_UNAVAILABLE");
+  await expect(messages(5, undefined, true).client.inspectDemoScope("active", "0")).rejects.toThrow("OBSERVATION_CHANGED");
+  await expect(messages(16001).client.inspectDemoScope("active", "0")).rejects.toThrow("ZAP_MALFORMED_RESPONSE");
+});
+const rule = (status: string) => ({ Plugin: ["Rule", "1", "release", status, "5", "1", "0"] });
+test("scan progress reports host and rule counts without an outcome", async () => {
+  const client = reply({
+    scanProgress: [
+      "http://juice-shop:3000",
+      { HostProcess: ["Complete", "Complete", "Skipped, no OAST", "40%", "Pending", "other"].map(rule) },
+    ],
+  });
+  const result = await client.scanProgress("0");
+  expect(result).toEqual({
+    hosts: [{ origin: "http://juice-shop:3000", rules: { complete: 2, skipped: 1, running: 1, pending: 1, unknown: 1 } }],
+  });
+  expect(JSON.stringify(result)).not.toMatch(/SUCCEEDED|outcome/);
+});
+test("malformed scan progress is rejected and unusable hosts stay unknown", async () => {
+  for (const scanProgress of [["http://juice-shop:3000"], [{ HostProcess: [] }, "x"], ["h", { HostProcess: [{ Plugin: ["a"] }] }], null])
+    await expect(reply({ scanProgress }).scanProgress("0")).rejects.toThrow("ZAP_MALFORMED_RESPONSE");
+  expect((await reply({ scanProgress: ["juice-shop", { HostProcess: [] }] }).scanProgress("0")).hosts[0].origin).toBeNull();
+});
