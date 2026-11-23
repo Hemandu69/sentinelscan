@@ -34,4 +34,4 @@ Copy `.env.example` to `.env` on a fresh checkout and keep it private. Preserve 
 
 `POST /api/v1/assessments/:id/cancel-tracking` works for any open assessment, including archived and non-demo websites, because it changes local records only. It never contacts ZAP and returns `providerScanStopped: false`. Association, refresh and import still require the authorized demo scope.
 
-The inventory adapter cannot produce SUCCEEDED, FAILED or CANCELLED. Only evidence contract v1 can, through `src/integrations/zap/run-log.ts` and `evidence.ts`. It is fixture-tested, not live-verified, and migration `202611230001_run_evidence` is not applied. See the documentation repository's `docs/run-evidence-design.md`.
+The inventory adapter cannot produce SUCCEEDED, FAILED or CANCELLED. Only evidence contract v1 can, through `src/integrations/zap/run-log.ts` and `evidence.ts`. It is fixture-tested, not live-verified, and migration `202611230001_run_evidence` is applied in the existing workspace. See the documentation repository's `docs/run-evidence-design.md`.
