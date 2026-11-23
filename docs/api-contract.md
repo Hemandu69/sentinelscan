@@ -1,6 +1,6 @@
 # Local API contract
 
-Base origin: `http://127.0.0.1:4000`. Send JSON bodies for create requests. Application errors return an `error` code and a `requestId`. The shared workspace has no user authentication.
+Base origin: `http://127.0.0.1:4000`. Send JSON bodies for create requests. Application errors, including unknown routes (404 NOT_FOUND), return an `error` code and a `requestId`. The shared workspace has no user authentication.
 
 | Method and path | Current behavior |
 |---|---|
@@ -28,20 +28,20 @@ The diagnostic CLI and HTTP discovery read the provider inventory. Global alerts
 
 | Method and suffix | Input and result |
 |---|---|
-| GET /execution | Saved status and run rows including kind, scan_id, state, progress and observed_at. |
+| GET /execution | Saved status and run rows for any assessment, without provider access, including kind, scan_id, state, progress and observed_at. |
 | POST /zap-association | kind, scanId, sessionKey, target, confirmedOperatorReceipt=true. Returns the saved row. |
 | POST /zap-sync | Empty object. Refreshes the saved observations and returns status and runs. |
-| POST /cancel-tracking | confirmed=true. Returns the cancelled local assessment status. |
+| POST /cancel-tracking | confirmed=true. Closes any open assessment locally, including archived and non-demo websites. Returns status and providerScanStopped=false. Never contacts ZAP. |
 | POST /zap-import | Empty object. Returns status and findingCount after verified import or idempotent replay. |
 
-GET /api/v1/integrations/zap/session-fingerprint returns a nonsecret sessionKey. A receipt requires evidence captured during that session. The production inventory adapter currently has no trusted successful terminal cause. See [submission](submission.md) for the import gate.
+GET /api/v1/integrations/zap/session-fingerprint returns a nonsecret sessionKey. Watchtower does not call it. The operator captures it with `npm.cmd run zap:session` in the API checkout while the run is in the current session. A receipt requires evidence captured during that session. The production inventory adapter currently has no trusted successful terminal cause. See [submission](submission.md) for the import gate.
 
 ## Operator-controlled assessment records
 
 | Read endpoint | Contents |
 |---|---|
 | GET /api/v1/assessments | Newest assessments first. Optional targetId and offset. |
-| GET /api/v1/assessments/:id | Authorized URL snapshot, website, stored status and timestamps. Finding count is null until completion. |
+| GET /api/v1/assessments/:id | Authorized URL snapshot, website, stored status and timestamps. startedAt is the first time an associated run was observed RUNNING. Finding count is null until completion. |
 | GET /api/v1/findings | Completed assessment findings. Optional assessmentId, severity, title search q and offset. |
 | GET /api/v1/integrations/zap/scans?kind=spider or kind=active | Runs visible on the fixed local provider, reported state, progress and origin if available. |
 

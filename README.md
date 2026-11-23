@@ -10,8 +10,8 @@ An evaluator should be able to trace a finding from a specific authorized websit
 | sentinelscan-api | Fastify HTTP API, Prisma schema and migrations, PostgreSQL persistence, read-only ZAP integration |
 | sentinelscan-infrastructure | Local Docker Compose services for PostgreSQL, OWASP ZAP and Juice Shop |
 
-Stages 0–2 are accepted. Stage 3 has verified live provider reads and database transactions. Importing the results of a genuine operator-initiated run remains the next acceptance milestone.
+Roadmap stages 0–2 are accepted. Stage 3 has verified live provider reads and database transactions. Importing the results of a genuine operator-initiated run remains the next acceptance milestone.
 
-The assessment page can store operator run receipts, refresh observed progress and request a verified findings import. The submission guide covers the new storage migration, offline checks, evidence requirements and one final Windows integration session. [Submission and verification guide](docs/submission.md)
+The assessment page can store operator run receipts, refresh observed progress and request a verified findings import. Import cannot complete against live ZAP until a trusted terminal outcome and scope source exists. The submission guide covers that gap, offline checks, evidence requirements and one final Windows integration session. [Submission and verification guide](docs/submission.md)
 
 [Architecture](ARCHITECTURE.md) · [Development guide](DEVELOPMENT.md) · [Roadmap and evidence](docs/development-roadmap.md) · [Local setup](docs/local-setup.md) · [API contract](docs/api-contract.md) · [Security model](docs/security-model.md)

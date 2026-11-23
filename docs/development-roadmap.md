@@ -9,8 +9,14 @@
 | 4 · Assessment records | Implemented with fixture coverage | Operator receipt association, refresh and transactional import are available. Live import and restart verification remain pending. |
 | 5 · Web foundation | Implemented | The operator verified website registration and three operational service indicators on Windows. |
 | 6 · Product workflow | Implemented in part | Assessment detail, findings exploration and a printable assessment report are available. Browser PDF export and the integrated operator journey await acceptance. |
-| 7 · Quality | Planned | Exercise the integrated workflow, accessibility, responsive layouts and failure cases. |
-| 8 · Handover | Planned | Reproduce setup and local recovery on Windows. |
+| 7 · Quality | Fixture-verified | Built pages pass fixture browser checks for layout, structure, contrast, loading, empty, error and print states. The live integrated workflow remains unverified. |
+| 8 · Handover | Documented, unverified | Reproduce setup and local recovery on Windows. |
+
+The separate "Stage 6 · Final Integration, Reliability & Submission Readiness" request covers offline hardening across these roadmap stages. It included no live scan, migration or container change.
+
+## Run storage migration
+
+A verified-backup file and a regenerated client dated November 23 indicate that the migration script ran at least that far. Whether the migration is applied has not been confirmed. Check it read-only before starting the API.
 
 ## Stage 3 persistence evidence
 

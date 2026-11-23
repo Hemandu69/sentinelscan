@@ -20,13 +20,13 @@ docker --context desktop-linux compose ps
 node .\verify-zap.cjs
 ```
 
-Expect Linux engine access, healthy services and host bindings on 127.0.0.1. The verifier prints the version and checks rejection of absent and incorrect keys. Resolve any failure before continuing.
+The `--no-recreate` flag matters: plain `up` can replace a container whose configuration changed and discard the ZAP session. Expect Linux engine access, healthy services and host bindings on 127.0.0.1. The verifier prints the version and checks rejection of absent and incorrect keys. Resolve any failure before continuing.
 
 For an existing installation, follow the [backup and migration steps](submission.md) before applying the run-storage migration. Preserve the current provider session while collecting evidence.
 
 ## Prepare and run the API
 
-For a fresh installation use the commands below. On the existing workspace, use the backup-verified migration procedure in the submission guide before starting a version of the API that reads assessment_runs. On either installation, opt into the exact Juice Shop registration and consent scope in the API terminal.
+For a fresh installation use the commands below. On the existing workspace, use the backup-verified migration procedure in the submission guide before starting a version of the API that reads assessment_runs. To opt into the exact Juice Shop scope, set `SENTINELSCAN_DEMO_TARGET=juice-shop` in the API `.env`.
 
 ```powershell
 Set-Location -LiteralPath '..\sentinelscan-api'
@@ -35,7 +35,6 @@ npm.cmd run generate
 npm.cmd run migrate
 npm.cmd run test:database
 npm.cmd run test:zap:live
-$env:SENTINELSCAN_DEMO_TARGET = 'juice-shop'
 npm.cmd start
 ```
 
@@ -45,10 +44,10 @@ To stop the API, press Ctrl+C in its terminal. To stop the containers and retain
 
 ## Run Watchtower
 
-In another PowerShell terminal open the sibling web checkout and run the following. Keep the terminal open and visit http://127.0.0.1:3000/. The development server binds to loopback. For a production build use `npm.cmd run build` and `npm.cmd start` in the web checkout with the development server stopped.
+In another PowerShell terminal, start from the common parent directory and run the following. Keep the terminal open and visit http://127.0.0.1:3000/. The development server binds to loopback. For a production build use `npm.cmd run build` and `npm.cmd start` in the web checkout with the development server stopped.
 
 ```powershell
-Set-Location -LiteralPath 'C:\Users\hemen\OneDrive\Documents\codes\SentinelScan\sentinelscan-web'
+Set-Location -LiteralPath '.\sentinelscan-web'
 npm.cmd ci
 npm.cmd run dev
 ```

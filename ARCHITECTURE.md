@@ -15,13 +15,13 @@ One Windows host runs a shared workspace. The Next.js Watchtower frontend commun
 | Table | Relationship and purpose |
 |---|---|
 | targets | Stores the canonical URL and display name. Archiving preserves history. |
-| assessments | Belongs to a target. Captures the authorized URL, consent timestamp and wording version, source, status and execution timestamps. |
+| assessments | Belongs to a target. Captures the authorized URL, consent timestamp and wording version, source, status, first observed running time and finish time. |
 | findings | Belongs to an assessment. A unique assessment/fingerprint pair supports idempotent persistence. |
 | assessment_runs | Additive migration. One Spider and one active receipt per assessment. A unique session, kind and ID tuple prevents reuse across assessments. |
 | reports | Belongs to an assessment. Reserved snapshot metadata. The current print view reconciles live application records and uses the browser print engine without writing this table. |
 
 ## Operator-run design
 
-The operator initiates spider and active scans in the configured ZAP instance. SentinelScan is intended to discover those runs, link them to the authorized assessment and explicitly import their final findings. Scan association must verify provider identity, run identity and target scope. A scan ID can be reused across sessions. A matching number or version string alone cannot establish identity.
+The operator initiates spider and active scans in the configured ZAP instance. SentinelScan lists those runs, stores operator receipts that link them to the authorized assessment, and imports findings only after verification. Scan association must verify provider identity, run identity and target scope. A scan ID can be reused across sessions. A matching number or version string alone cannot establish identity.
 
-The importer must establish successful termination and retrieve every attributed alert before finalization. The existing persistence routine locks the assessment and writes findings and completion in one transaction. A verified successful scan may have zero findings. A partial read, ambiguous outcome or provider error leaves the assessment incomplete. Cancelled and failed runs retain distinct outcomes. The complete operator-to-database path still requires live verification.
+The importer must establish successful termination and retrieve every attributed alert before finalization. The existing persistence routine locks the assessment and writes findings and completion in one transaction. A verified successful scan may have zero findings. A partial read, ambiguous outcome or provider error leaves the assessment incomplete. Cancelled and failed runs retain distinct outcomes. Cancelling tracking is a local record change and never stops a provider scan. The complete operator-to-database path still requires live verification.
