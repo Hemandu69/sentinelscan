@@ -70,6 +70,9 @@ export function buildApp(
     }
     reply.code(status).send({ error: code, requestId: req.id });
   });
+  app.setNotFoundHandler((req, reply) =>
+    reply.code(404).send({ error: "NOT_FOUND", requestId: req.id }),
+  );
   registerHealth(app, db);
   registerDashboard(app, db);
   registerZap(app, zap);

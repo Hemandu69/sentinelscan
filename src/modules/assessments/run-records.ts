@@ -40,7 +40,20 @@ async function eligible(tx: Tx, id: string) {
   >`SELECT a.status, (a.target_url_snapshot=${demo} AND t.canonical_url=${demo} AND t.archived_at IS NULL AND a.authorization_confirmed_at IS NOT NULL AND a.authorization_text_version=${consentVersion}) AS eligible FROM assessments a JOIN targets t ON a.target_id=t.id WHERE a.id=${id}::uuid FOR UPDATE OF a,t`;
   if (!row) throw new ApiError(404, "ASSESSMENT_NOT_FOUND");
   if (!row.eligible) throw new ApiError(403, "ASSESSMENT_SCOPE_NOT_AUTHORIZED");
-  await registeredScope(demo);
+  try {
+    await registeredScope(demo);
+  } catch {
+    throw new ApiError(403, "DEMO_SCOPE_DISABLED");
+  }
+  return row.status;
+}
+// Cancelling is local bookkeeping. It needs no provider access and stays available
+// when the target is archived or outside the demo scope.
+async function lockedStatus(tx: Tx, id: string) {
+  const [row] = await tx.$queryRaw<
+    { status: string }[]
+  >`SELECT status FROM assessments WHERE id=${id}::uuid FOR UPDATE`;
+  if (!row) throw new ApiError(404, "ASSESSMENT_NOT_FOUND");
   return row.status;
 }
 async function observe(zap: ZapClient, kind: Kind, id: string) {
@@ -101,10 +114,12 @@ export function registerRunRecords(
   app.post(base + "/zap-association", async (req) => {
     const { id } = params.parse(req.params),
       input = binding.parse(req.body);
-    const existing = await db.$transaction(async (tx) => {
-      await eligible(tx, id);
-      return (await runs(tx, id)).find((r) => r.kind === input.kind);
-    });
+    const { status: initial, existing } = await db.$transaction(
+      async (tx) => ({
+        status: await eligible(tx, id),
+        existing: (await runs(tx, id)).find((r) => r.kind === input.kind),
+      }),
+    );
     if (existing) {
       if (
         existing.scan_id === input.scanId &&
@@ -113,6 +128,7 @@ export function registerRunRecords(
         return existing;
       throw new ApiError(409, "ZAP_RUN_ALREADY_BOUND");
     }
+    if (isClosed(initial)) throw new ApiError(409, "ASSESSMENT_INELIGIBLE");
     const verify = async () => {
       if ((await getSession()) !== input.sessionKey)
         throw new ApiError(409, "ZAP_SESSION_CHANGED");
@@ -146,7 +162,7 @@ export function registerRunRecords(
         sample.outcome === "FAILED" || sample.outcome === "CANCELLED"
           ? sample.outcome
           : null;
-      await tx.$executeRaw`UPDATE assessments SET status=${terminal ?? trackingStatus(input.kind, sample.state, status)},finished_at=CASE WHEN ${!!terminal} THEN CURRENT_TIMESTAMP ELSE finished_at END,error_code=CASE WHEN ${!!terminal} THEN ${terminal ? "ZAP_RUN_" + terminal : null}::text ELSE error_code END WHERE id=${id}::uuid`;
+      await tx.$executeRaw`UPDATE assessments SET status=${terminal ?? trackingStatus(input.kind, sample.state, status)},started_at=CASE WHEN ${sample.outcome === "RUNNING"} THEN COALESCE(started_at,CURRENT_TIMESTAMP) ELSE started_at END,finished_at=CASE WHEN ${!!terminal} THEN CURRENT_TIMESTAMP ELSE finished_at END,error_code=CASE WHEN ${!!terminal} THEN ${terminal ? "ZAP_RUN_" + terminal : null}::text ELSE error_code END WHERE id=${id}::uuid`;
       return (await runs(tx, id)).find((r) => r.kind === input.kind);
     });
   });
@@ -199,6 +215,12 @@ export function registerRunRecords(
           const latest = samples.find((r) => r.kind === "active") ?? samples[0];
           status = trackingStatus(latest.kind, latest.state, status);
           await tx.assessment.update({ where: { id }, data: { status } });
+          // startedAt is the first time an associated run was observed RUNNING.
+          if (samples.some((r) => r.outcome === "RUNNING"))
+            await tx.assessment.updateMany({
+              where: { id, startedAt: null },
+              data: { startedAt: new Date() },
+            });
         }
       }
       return { status, runs: await runs(tx, id) };
@@ -208,8 +230,10 @@ export function registerRunRecords(
     const { id } = params.parse(req.params);
     z.strictObject({ confirmed: z.literal(true) }).parse(req.body);
     return db.$transaction(async (tx) => {
-      const status = await eligible(tx, id);
-      if (status === "CANCELLED") return { status };
+      const status = await lockedStatus(tx, id);
+      // The provider run has its own lifecycle and is never contacted here.
+      const result = { status: "CANCELLED", providerScanStopped: false };
+      if (status === "CANCELLED") return result;
       if (isClosed(status)) throw new ApiError(409, "ASSESSMENT_INELIGIBLE");
       await tx.assessment.update({
         where: { id },
@@ -219,7 +243,7 @@ export function registerRunRecords(
           finishedAt: new Date(),
         },
       });
-      return { status: "CANCELLED" };
+      return result;
     });
   });
   const importing = new Set<string>();
@@ -296,7 +320,7 @@ export function registerRunRecords(
         });
         const findingCount = await persistFinalFindingsTx(tx, id, findings);
         for (const { run, sample, observedAt } of finalObservations) {
-          const updated = await tx.$executeRaw`UPDATE assessment_runs SET state=${sample.state}, progress=${sample.progress}, observed_at=${observedAt} WHERE kind=${run.kind} AND assessment_id=${id}::uuid AND session_key=${run.session_key} AND scan_id=${run.scan_id}`;
+          const updated = await tx.$executeRaw`UPDATE assessment_runs SET state=${sample.state}, progress=${sample.progress}, observed_at=GREATEST(observed_at,${observedAt}) WHERE kind=${run.kind} AND assessment_id=${id}::uuid AND session_key=${run.session_key} AND scan_id=${run.scan_id}`;
           if (updated !== 1) throw new ApiError(409, "OBSERVATION_CHANGED");
         }
         return { status: "COMPLETED", findingCount };

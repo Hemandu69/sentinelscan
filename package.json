@@ -11,6 +11,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint src tests",
     "inspect:zap": "node --env-file=.env --experimental-strip-types src/integrations/zap/inspect.ts",
+    "zap:session": "node --env-file=.env --experimental-strip-types src/integrations/zap/show-session.ts",
     "test:zap:live": "node --env-file=.env node_modules/vitest/vitest.mjs run tests/zap-live.test.ts",
     "test:run-storage": "node --env-file=.env node_modules/vitest/vitest.mjs run tests/run-storage-live.test.ts",
     "test:dashboard:live": "node --env-file=.env node_modules/vitest/vitest.mjs run tests/dashboard-live.test.ts",

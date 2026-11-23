@@ -1,4 +1,6 @@
 # Windows PowerShell 5.1. Stop SentinelScan in its API terminal (Ctrl+C) first.
+# -AssessmentId names an existing authorized demo assessment that must survive the migration.
+param([Parameter(Mandatory=$true)][guid]$AssessmentId)
 $ErrorActionPreference = 'Stop'
 $infra = Join-Path $PSScriptRoot '..\sentinelscan-infrastructure'
 $ctx = @('--context', 'desktop-linux')
@@ -23,7 +25,7 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'Independent database query failed.' }
         return $rows
     }
-    $authorized = Read-Database "SELECT count(*) FROM sentinelscan.assessments a JOIN sentinelscan.targets t ON t.id=a.target_id WHERE a.id='b113e0b9-c57f-43a4-86a7-51fe94507c96' AND a.target_url_snapshot='http://juice-shop:3000/' AND t.canonical_url=a.target_url_snapshot AND a.authorization_confirmed_at IS NOT NULL;"
+    $authorized = Read-Database "SELECT count(*) FROM sentinelscan.assessments a JOIN sentinelscan.targets t ON t.id=a.target_id WHERE a.id='$AssessmentId' AND a.target_url_snapshot='http://juice-shop:3000/' AND t.canonical_url=a.target_url_snapshot AND a.authorization_confirmed_at IS NOT NULL;"
     if ($authorized -ne '1') { throw 'Expected authorized assessment and target were not found.' }
     $tables = @('targets','assessments','findings','reports')
     function Read-Snapshot {

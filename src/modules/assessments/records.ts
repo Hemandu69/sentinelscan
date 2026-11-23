@@ -28,7 +28,7 @@ function assessment({ target, _count, errorCode, ...row }: AssessmentRow) {
     ZAP_RUN_CANCELLED:
       "ZAP reported that the linked run was stopped or cancelled.",
     OPERATOR_CANCELLED_TRACKING:
-      "The operator cancelled tracking in SentinelScan.",
+      "The operator cancelled tracking in SentinelScan. This did not stop any ZAP scan.",
   };
   return {
     ...row,

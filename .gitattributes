@@ -1,0 +1,2 @@
+# Prisma records checksums of migration bytes. Keep them exactly as applied.
+prisma/migrations/** -text
