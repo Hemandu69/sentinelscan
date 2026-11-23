@@ -55,7 +55,7 @@ export function Overview() {
       <main id="main">
         <div id="overview" className="mast">
           <span>
-            SentinelScan <b>/</b> <strong>Overview</strong>
+            SentinelScan <b aria-hidden="true">/</b> <strong>Overview</strong>
           </span>
           <button
             className="refresh"

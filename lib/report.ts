@@ -1,5 +1,5 @@
 import type { z } from "zod";
-import { request } from "./api.ts";
+import { request, RequestFailure } from "./api.ts";
 import { assessmentDetail, finding, findings } from "./records.ts";
 
 export async function loadReport(id: string, signal: AbortSignal) {
@@ -13,7 +13,7 @@ export async function loadReport(id: string, signal: AbortSignal) {
     !assessment.severities ||
     !assessment.finishedAt
   )
-    throw new Error(
+    throw new RequestFailure(
       "A completed assessment with final results is required for a report.",
     );
 
@@ -31,7 +31,7 @@ export async function loadReport(id: string, signal: AbortSignal) {
     );
     for (const row of page.items) {
       if (row.assessmentId !== id || seen.has(row.id))
-        throw new Error(
+        throw new RequestFailure(
           "The findings contain a duplicate or belong to another assessment.",
         );
       seen.add(row.id);
@@ -43,26 +43,26 @@ export async function loadReport(id: string, signal: AbortSignal) {
     }
     if (!page.hasMore) break;
     if (!page.items.length || items.length >= assessment.findingCount)
-      throw new Error(
+      throw new RequestFailure(
         "The finding list changed while loading the report. Reload to try again.",
       );
   }
   if (items.length !== assessment.findingCount)
-    throw new Error(
+    throw new RequestFailure(
       "The finding count differs from the assessment total. Reload to try again.",
     );
   const reported = new Set<string>();
   for (const group of assessment.severities) {
     if (reported.has(group.severity))
-      throw new Error("The assessment repeats a severity category.");
+      throw new RequestFailure("The assessment repeats a severity category.");
     reported.add(group.severity);
     if (group.count !== (counts.get(group.severity) ?? 0))
-      throw new Error(
+      throw new RequestFailure(
         "The severity totals differ from the assessment. Reload to try again.",
       );
     counts.delete(group.severity);
   }
   if (counts.size)
-    throw new Error("The assessment severity summary is incomplete.");
+    throw new RequestFailure("The assessment severity summary is incomplete.");
   return { assessment, items };
 }

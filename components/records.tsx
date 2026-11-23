@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { useState, useEffect, useMemo, type ReactNode } from "react";
 import { z } from "zod";
-import { request } from "../lib/api";
+import { describeError, request } from "../lib/api";
 import { detailFor, assessments, findings, scans } from "../lib/records";
 import { Navigation } from "./navigation";
 import { RunReceipts } from "./run-receipts";
@@ -21,7 +21,7 @@ function Read<T>({
   const [result, setResult] = useState<{
     key: string;
     value?: T;
-    error?: boolean;
+    error?: string;
   }>();
   const key = path + "#" + revision;
   useEffect(() => {
@@ -31,8 +31,9 @@ function Read<T>({
       .then((value) => {
         if (!control.signal.aborted) setResult({ key, value });
       })
-      .catch(() => {
-        if (!control.signal.aborted) setResult({ key, error: true });
+      .catch((cause: unknown) => {
+        if (!control.signal.aborted)
+          setResult({ key, error: describeError(cause) });
       });
     return () => control.abort();
   }, [path, schema, key]);
@@ -40,7 +41,7 @@ function Read<T>({
   if (result.error || result.value === undefined)
     return (
       <p role="alert">
-        These records could not be loaded.{" "}
+        These records could not be loaded. {result.error}{" "}
         <button className="refresh" onClick={() => retry((n) => n + 1)}>
           Retry
         </button>
@@ -117,6 +118,7 @@ export function AssessmentHistory({ targetId }: { targetId?: string }) {
   );
 }
 function Findings({ assessmentId }: { assessmentId?: string }) {
+  const FixHeading = assessmentId ? "h3" : "h2";
   const [offset, set] = useState(0),
     [q, search] = useState(""),
     [severity, filter] = useState(""),
@@ -190,7 +192,7 @@ function Findings({ assessmentId }: { assessmentId?: string }) {
                 <p>{f.description}</p>
                 {f.method && <p>HTTP method: {f.method}</p>}
                 {f.parameter && <p>Parameter: {f.parameter}</p>}
-                <h3>Recommended fix</h3>
+                <FixHeading style={{ font: "inherit" }}>Recommended fix</FixHeading>
                 <p>{f.remediation || "No remediation supplied."}</p>
                 <p>
                   {f.cweId && "CWE-" + f.cweId} {f.wascId && "WASC-" + f.wascId}
@@ -320,18 +322,19 @@ export function RecordsPage({
                     {row.status} · Requested {date(row.requestedAt)}
                   </p>
                   <p>
-                    Started:{" "}
+                    First observed running:{" "}
                     {row.startedAt ? date(row.startedAt) : "Unrecorded"} ·
                     Finished:{" "}
                     {row.finishedAt ? date(row.finishedAt) : "Unrecorded"}
                   </p>
                 </section>
-                {row.targetUrlSnapshot === "http://juice-shop:3000/" && (
-                  <RunReceipts
-                    id={id}
-                    onUpdated={() => refreshDetail((n) => n + 1)}
-                  />
-                )}
+                <RunReceipts
+                  id={id}
+                  canAssociate={
+                    row.targetUrlSnapshot === "http://juice-shop:3000/"
+                  }
+                  onUpdated={() => refreshDetail((n) => n + 1)}
+                />
                 <h2>Provider runs</h2>
                 <p>
                   These runs belong to the configured daemon. Linking requires

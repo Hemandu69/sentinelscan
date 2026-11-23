@@ -1,4 +1,5 @@
 import { RecordsPage } from "../../../components/records";
+export const metadata = { title: "Assessment details · SentinelScan" };
 export default async function Page({
   params,
 }: {

@@ -1,13 +1,15 @@
 "use client";
 import { useState, useEffect, useRef, type FormEvent } from "react";
 import { z } from "zod";
-import { request } from "../lib/api";
+import { describeError, request } from "../lib/api";
 import { execution } from "../lib/records";
 export function RunReceipts({
   id,
+  canAssociate,
   onUpdated,
 }: {
   id: string;
+  canAssociate: boolean;
   onUpdated: () => void;
 }) {
   const base = "/api/v1/assessments/" + encodeURIComponent(id);
@@ -25,9 +27,11 @@ export function RunReceipts({
       .then((x) => {
         if (!ctrl.signal.aborted) setData(x);
       })
-      .catch(() => {
+      .catch((cause: unknown) => {
         if (!ctrl.signal.aborted)
-          setError("Saved scan records could not be loaded.");
+          setError(
+            "Saved scan records could not be loaded. " + describeError(cause),
+          );
       });
     return () => ctrl.abort();
   }, [base, reload]);
@@ -44,11 +48,14 @@ export function RunReceipts({
         onUpdated();
       }
     } catch (e) {
-      if (!signal.aborted)
-        setError(e instanceof Error ? e.message : "The operation failed.");
+      if (!signal.aborted) {
+        setError(describeError(e));
+        // The server may have saved the change even when its reply was lost.
+        setReload((count) => count + 1);
+      }
     } finally {
       locked.current = false;
-      if (!signal.aborted) setBusy(false);
+      setBusy(false);
     }
   }
   function bind(e: FormEvent<HTMLFormElement>) {
@@ -62,13 +69,15 @@ export function RunReceipts({
       target: "http://juice-shop:3000/",
     });
   }
+  const unknownOutcome = data?.runs.some((run) => run.state !== "RUNNING");
   const closed =
     data && ["COMPLETED", "FAILED", "CANCELLED"].includes(data.status);
   return (
     <section className="registry">
       <h2>Saved scan records</h2>
       {error && <p role="alert">{error}</p>}
-      {!data && (
+      {!data && !error && <p role="status">Loading saved scan records…</p>}
+      {!data && error && (
         <button
           className="refresh"
           onClick={() => {
@@ -90,14 +99,26 @@ export function RunReceipts({
       {data && !data.runs.length && (
         <p>No scan receipts saved for this assessment.</p>
       )}
+      {data && !closed && unknownOutcome && (
+        <p>
+          ZAP did not report every saved run as running at the last check. That
+          does not show how a run ended, so its outcome is unknown and the
+          assessment stays open.
+        </p>
+      )}
       {data && !closed && (
         <>
-          <details>
+          {canAssociate && <details>
             <summary>Record an existing operator run</summary>
             <form onSubmit={bind}>
               <p>
-                Use the ID and session fingerprint recorded with your run of
-                http://juice-shop:3000/.
+                Use the ID and session fingerprint you recorded while your run of
+                http://juice-shop:3000/ was in the current ZAP session.
+              </p>
+              <p>
+                To record them, run <code>npm.cmd run zap:session</code> in the
+                API checkout during the run. The command only reads. A
+                fingerprint captured later cannot prove an earlier run.
               </p>
               <div className="ledger-filters">
                 <label>
@@ -134,8 +155,8 @@ export function RunReceipts({
                 Save run receipt
               </button>
             </form>
-          </details>
-          {data.runs.length > 0 && (
+          </details>}
+          {canAssociate && data.runs.length > 0 && (
             <button
               className="refresh"
               disabled={busy}
@@ -144,7 +165,7 @@ export function RunReceipts({
               Update saved progress
             </button>
           )}
-          {data.runs.length === 2 && (
+          {canAssociate && data.runs.length === 2 && (
             <button
               className="primary"
               disabled={busy}
@@ -153,21 +174,25 @@ export function RunReceipts({
               Verify and import results
             </button>
           )}
+          <p>
+            Cancelling tracking closes this record in SentinelScan only. It does
+            not stop a scan. Stop a running scan in ZAP.
+          </p>
           <button
             className="refresh"
             disabled={busy}
             onClick={() => {
               if (
                 window.confirm(
-                  "Cancel this assessment in SentinelScan? This prevents import. Any operator-run ZAP scan continues independently.",
+                  "Cancel tracking in SentinelScan? This cannot be undone and prevents import. It does not stop any ZAP scan.",
                 )
               )
                 void submit("cancel-tracking", { confirmed: true });
             }}
           >
-            Cancel assessment tracking
+            Cancel local tracking
           </button>
-          {busy && <p role="status">Checking provider evidence…</p>}
+          {busy && <p role="status">Working… Provider checks can take a minute.</p>}
         </>
       )}
     </section>

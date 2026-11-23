@@ -5,7 +5,48 @@ export type Site = {
   canonicalUrl: string;
   createdAt: string;
 };
+// Provider operations verify the Docker session and read ZAP several times. Each of those
+// reads may take five seconds on the server, so the browser must wait longer than their sum.
+export function timeoutFor(path: string) {
+  if (path.endsWith("/zap-import")) return 240000;
+  if (path.endsWith("/zap-association") || path.endsWith("/zap-sync"))
+    return 60000;
+  if (path.includes("/zap-observations/") || path.includes("/zap/scans"))
+    return 20000;
+  return 8000;
+}
+export class RequestFailure extends Error {}
+export class RequestTimeout extends RequestFailure {
+  name = "TimeoutError";
+}
+// Only messages written for the operator are displayed. Anything else is summarized.
+export function describeError(error: unknown) {
+  if (error instanceof RequestFailure) return error.message;
+  if (error instanceof TypeError) return "Could not reach the local API.";
+  return "The local API returned an unexpected response.";
+}
 export async function request(
+  path: string,
+  signal: AbortSignal,
+  payload?: unknown,
+): Promise<unknown> {
+  try {
+    return await send(path, signal, payload);
+  } catch (error) {
+    if (
+      !signal.aborted &&
+      error instanceof Error &&
+      error.name === "TimeoutError"
+    )
+      throw new RequestTimeout(
+        payload === undefined
+          ? "The local API did not respond in time."
+          : "No response arrived in time. The operation may still have finished. Check the saved record before retrying.",
+      );
+    throw error;
+  }
+}
+async function send(
   path: string,
   signal: AbortSignal,
   payload?: unknown,
@@ -19,13 +60,13 @@ export async function request(
     root.search ||
     root.hash
   )
-    throw new Error("Check the local API address.");
+    throw new RequestFailure("Check the local API address.");
   const res = await fetch(root.origin + path, {
     cache: "no-store",
     redirect: "error",
     signal: AbortSignal.any([
       signal,
-      AbortSignal.timeout(path.endsWith("/zap-import") ? 150000 : 8000),
+      AbortSignal.timeout(timeoutFor(path)),
     ]),
     ...(payload === undefined
       ? {}
@@ -71,11 +112,36 @@ export async function request(
       ACTIVE_TARGET_EXISTS: "This website is already registered.",
       DESTINATION_PROHIBITED:
         "Use a website address permitted by the local target policy.",
-      INVALID_REQUEST: "Check the website name and URL.",
+      INVALID_REQUEST: "Some values were not accepted. Check them and try again.",
+      NOT_FOUND: "The local API does not offer this operation.",
+      ASSESSMENT_NOT_FOUND: "This assessment does not exist.",
+      ASSESSMENT_SCOPE_NOT_AUTHORIZED:
+        "This assessment is not authorized for provider operations, or its website is archived.",
+      DEMO_SCOPE_DISABLED:
+        "The local API was started without the Juice Shop demo setting.",
+      CONFIRMATION_LIMIT:
+        "Too many authorization reviews are open. Wait five minutes and try again.",
+      DATABASE_UNAVAILABLE: "The database is unavailable.",
+      ZAP_UNAVAILABLE: "ZAP is unavailable.",
+      ZAP_TIMEOUT: "ZAP did not respond in time.",
+      ZAP_MISSING_CREDENTIALS: "The local API has no ZAP credential.",
+      ZAP_INVALID_CREDENTIALS: "ZAP refused the local API's credential.",
+      ZAP_PROVIDER_ERROR: "ZAP reported an error.",
+      ZAP_MALFORMED_RESPONSE: "ZAP returned incomplete or unexpected data.",
+      ZAP_RESPONSE_TOO_LARGE: "ZAP returned more data than can be verified.",
+      ZAP_RUN_AMBIGUOUS: "ZAP lists this run ID more than once.",
+      UNVERIFIED_PROVIDER_VERSION:
+        "ZAP is not the version this workspace was verified with.",
+      FINDING_OUTSIDE_TARGET:
+        "A finding lies outside the authorized website. Nothing was imported.",
+      FINDING_MISSING_REQUIRED_FIELD:
+        "A finding is missing required data. Nothing was imported.",
     };
-    throw new Error(
-      messages[body?.error] ||
-        "The local service could not complete this request.",
+    const code = body?.error;
+    throw new RequestFailure(
+      typeof code === "string" && Object.hasOwn(messages, code)
+        ? messages[code]
+        : "The local service could not complete this request.",
     );
   }
   return res.json();
@@ -94,7 +160,7 @@ export function readSites(body: unknown): Site[] {
         Number.isFinite(Date.parse(s.createdAt)),
     )
   )
-    throw new Error("Invalid website list.");
+    throw new RequestFailure("Invalid website list.");
   return body;
 }
 export function serviceReady(path: string, body: unknown) {
@@ -121,7 +187,7 @@ export async function fetchWebsite(
   id: string,
   signal: AbortSignal,
 ): Promise<WebsiteDetail> {
-  if (!uuid.test(id)) throw new Error("Invalid website ID.");
+  if (!uuid.test(id)) throw new RequestFailure("Invalid website ID.");
   const value = await request("/api/v1/targets/" + id, signal);
   const site = readSites([value])[0];
   const confirmation =
@@ -147,7 +213,7 @@ export async function fetchWebsite(
     typeof confirmation.expiresAt !== "string" ||
     !Number.isFinite(Date.parse(confirmation.expiresAt))
   ) {
-    throw new Error("The website authorization details could not be verified.");
+    throw new RequestFailure("The website authorization details could not be verified.");
   }
   return {
     ...site,
@@ -171,7 +237,7 @@ export async function createAssessment(
     consent.url !== site.canonicalUrl ||
     Date.parse(consent.expiresAt) <= Date.now()
   )
-    throw new Error("Review the website and confirm a fresh authorization.");
+    throw new RequestFailure("Review the website and confirm a fresh authorization.");
   const result = await request("/api/v1/assessments", signal, {
     targetId: site.id,
     url: site.canonicalUrl,
@@ -192,7 +258,7 @@ export async function createAssessment(
     !("status" in result) ||
     result.status !== "PENDING"
   )
-    throw new Error(
+    throw new RequestFailure(
       "The creation receipt could not be verified. The request may have been saved.",
     );
   return { id: result.id, status: result.status };

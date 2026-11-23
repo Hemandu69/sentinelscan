@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { describeError } from "../lib/api";
 import { loadReport } from "../lib/report";
 import "./assessment-report.css";
 
@@ -19,9 +20,7 @@ export function AssessmentReport({ id }: { id: string }) {
       .catch((cause: unknown) => {
         if (!control.signal.aborted)
           setError(
-            cause instanceof Error && cause.name !== "ZodError"
-              ? cause.message
-              : "The API returned an incomplete report.",
+            describeError(cause),
           );
       });
     return () => control.abort();

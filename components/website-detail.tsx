@@ -2,17 +2,15 @@
 import Link from "next/link";
 import { AssessmentHistory } from "./records";
 import { useEffect, useRef, useState } from "react";
-import { createAssessment, fetchWebsite, type WebsiteDetail } from "../lib/api";
+import {
+  createAssessment,
+  describeError,
+  fetchWebsite,
+  RequestTimeout,
+  type WebsiteDetail,
+} from "../lib/api";
 import { Navigation } from "./navigation";
 import { Icon } from "./icons";
-
-function message(error: unknown) {
-  return error instanceof TypeError
-    ? "Could not reach the local API."
-    : error instanceof Error
-      ? error.message
-      : "The request failed.";
-}
 
 function Authorize({
   site,
@@ -60,10 +58,9 @@ function Authorize({
             created(receipt.id);
           } catch (err) {
             setError(
-              err instanceof TypeError ||
-                (err instanceof Error && err.name === "TimeoutError")
+              err instanceof TypeError || err instanceof RequestTimeout
                 ? "No creation receipt was received. The request may have been saved."
-                : message(err),
+                : describeError(err),
             );
             setBusy(false);
           }
@@ -121,7 +118,7 @@ export function WebsiteDetailPage({ id }: { id: string }) {
       })
       .catch((e) => {
         if (!control.signal.aborted) {
-          setError(message(e));
+          setError(describeError(e));
           setSite(null);
         }
       });
@@ -137,7 +134,7 @@ export function WebsiteDetailPage({ id }: { id: string }) {
       setSite(fresh);
       setConfirm(fresh);
     } catch (e) {
-      setError(message(e));
+      setError(describeError(e));
       setSite(null);
     } finally {
       opening.current = false;
@@ -150,7 +147,7 @@ export function WebsiteDetailPage({ id }: { id: string }) {
       <main id="main">
         <div className="mast">
           <span>
-            <Link href="/#websites">Websites</Link> <b>/</b>{" "}
+            <Link href="/#websites">Websites</Link> <b aria-hidden="true">/</b>{" "}
             <strong>Website details</strong>
           </span>
         </div>
@@ -213,11 +210,11 @@ export function WebsiteDetailPage({ id }: { id: string }) {
               </div>
               <p>
                 Review the target and confirm your permission to create an
-                assessment.
+                assessment record. This does not start a scan.
               </p>
               <button className="primary" disabled={reviewing} onClick={review}>
                 <Icon name="shield" />
-                {reviewing ? "Preparing confirmation…" : "Run Security Check"}
+                {reviewing ? "Preparing confirmation…" : "Create Security Check"}
               </button>
             </div>
           </section>

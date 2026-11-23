@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { request } from "../lib/api";
+import { describeError, request } from "../lib/api";
 import { Icon } from "./icons";
 export function SiteDialog({
   onClose,
@@ -55,13 +55,7 @@ export function SiteDialog({
             });
             onSaved();
           } catch (err) {
-            setError(
-              err instanceof TypeError
-                ? "Could not reach the local API."
-                : err instanceof Error
-                  ? err.message
-                  : "Could not register website.",
-            );
+            setError(describeError(err));
             setBusy(false);
           }
         }}

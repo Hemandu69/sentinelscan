@@ -1,6 +1,6 @@
 # SentinelScan · The Watchtower
 
-This independent frontend repository contains the Overview, website details and assessment creation flow. It runs on Windows with Node.js 24 and npm. Start the SentinelScan API on port 4000, then run these commands from this checkout.
+This independent frontend repository contains the Overview, website details, assessments, findings and printable report. It runs on Windows with Node.js 24 and npm. Start the SentinelScan API on port 4000, then run these commands from this checkout.
 
 ```powershell
 npm.cmd ci
@@ -25,7 +25,11 @@ The section navigation links to the implemented areas of the Overview. The theme
 
 ## Website details and authorization
 
-Open Websites and choose View Details. The page loads the registered address and date from GET /api/v1/targets/:id. Run Security Check requests fresh authorization wording for the exact address. Cancel dismisses the dialog. Checking the permission statement and choosing Create security check submits POST /api/v1/assessments once. A successful response shows the pending assessment ID and refreshes the website. Website history refreshes after creation. Open Assessments for the persisted record, or Findings to search completed results. Scan execution is separate.
+Open Websites and choose View Details. The page loads the registered address and date from GET /api/v1/targets/:id. Create Security Check requests fresh authorization wording for the exact address. Cancel dismisses the dialog. Checking the permission statement and choosing Create security check submits POST /api/v1/assessments once. A successful response shows the pending assessment ID and refreshes the website. Website history refreshes after creation. Open Assessments for the persisted record, or Findings to search completed results. Scan execution is separate.
+
+## Run records
+
+Saved scan records list operator receipts. Enter the run ID and session fingerprint that you captured with `npm.cmd run zap:session` in the API checkout. The page never fetches or fills in a fingerprint. Cancel local tracking closes the record in SentinelScan only. It never stops a ZAP scan. A saved run that is no longer running has an unknown outcome.
 
 ## Checks
 
@@ -37,6 +41,12 @@ npm.cmd run typecheck
 npm.cmd run lint
 npm.cmd run build
 npm.cmd start
+```
+
+With the built server running, the fixture browser checks need an existing Playwright core package and Chrome. They intercept every API request.
+
+```powershell
+node tests/browser/app.mjs <playwright-core index.js> <chrome.exe>
 ```
 
 The production server binds to loopback. Screenshots in screenshots/ show the built light and dark desktop layouts and mobile layout during an unavailable API reading.
