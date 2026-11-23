@@ -87,6 +87,20 @@ test("known codes are explained; unknown, inherited and malformed codes are summ
     });
   }
 });
+test("only fixed evidence reason codes are displayed", async (t) => {
+  t.mock.method(globalThis, "fetch", async () =>
+    Response.json(
+      { error: "ZAP_SUCCESS_OR_SCOPE_UNVERIFIED", reasons: ["LOG_TRUNCATED", "<b>x</b>", 5, "PROGRESS_RULES"] },
+      { status: 409 },
+    ),
+  );
+  await assert.rejects(request(base + "/zap-import", live(), {}), (error) => {
+    assert.match(error.message, /Missing evidence: LOG_TRUNCATED, PROGRESS_RULES\.$/);
+    assert.doesNotMatch(error.message, /<b>/);
+    return true;
+  });
+  assert.equal(timeoutFor(base + "/zap-import"), 900000);
+});
 test("internal errors are never shown verbatim", () => {
   assert.match(describeError(new TypeError("fetch internals")), /^Could not reach/);
   assert.match(describeError(new Error("internal detail")), /unexpected response/);

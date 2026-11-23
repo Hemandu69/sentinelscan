@@ -7,8 +7,9 @@ export type Site = {
 };
 // Provider operations verify the Docker session and read ZAP several times. Each of those
 // reads may take five seconds on the server, so the browser must wait longer than their sum.
+// Import collects complete evidence twice, each bounded at about five minutes.
 export function timeoutFor(path: string) {
-  if (path.endsWith("/zap-import")) return 240000;
+  if (path.endsWith("/zap-import")) return 900000;
   if (path.endsWith("/zap-association") || path.endsWith("/zap-sync"))
     return 60000;
   if (path.includes("/zap-observations/") || path.includes("/zap/scans"))
@@ -85,6 +86,12 @@ async function send(
         "The provider session differs from the recorded receipt. Import is blocked.",
       ZAP_SUCCESS_OR_SCOPE_UNVERIFIED:
         "ZAP has not supplied sufficient successful completion and scope evidence for both scans.",
+      ZAP_EVIDENCE_CHANGED:
+        "The run evidence changed while it was verified. Nothing was imported.",
+      ZAP_LOG_UNAVAILABLE:
+        "The ZAP container log could not be read. Nothing was imported.",
+      EVIDENCE_STORAGE_UNAVAILABLE:
+        "The evidence table is not available. Apply the reviewed migration first.",
       ZAP_RUN_ALREADY_BOUND:
         "This run or assessment slot already has a different binding.",
       SPIDER_RECEIPT_REQUIRED:
@@ -138,10 +145,19 @@ async function send(
         "A finding is missing required data. Nothing was imported.",
     };
     const code = body?.error;
+    const reasons: string[] = Array.isArray(body?.reasons)
+      ? body.reasons
+          .filter(
+            (item: unknown): item is string =>
+              typeof item === "string" && /^[A-Z_]{1,40}$/.test(item),
+          )
+          .slice(0, 20)
+      : [];
     throw new RequestFailure(
-      typeof code === "string" && Object.hasOwn(messages, code)
+      (typeof code === "string" && Object.hasOwn(messages, code)
         ? messages[code]
-        : "The local service could not complete this request.",
+        : "The local service could not complete this request.") +
+        (reasons.length ? " Missing evidence: " + reasons.join(", ") + "." : ""),
     );
   }
   return res.json();
