@@ -6,7 +6,7 @@ Watchtower lets an evaluator register a website, confirm permission for an exact
 
 **Readiness.** A live scan-to-database demonstration is still outstanding. Historical Active Scan 0 has outcome UNKNOWN. Offline import tests supply a trusted result in a fixture. The inventory cannot establish SUCCEEDED. Final acceptance requires contract evidence from one new, approved live run. A successful connectivity check cannot resolve this gap.
 
-**Known import blockers.** (1) ZAP 2.17.0's active scan source maps both a stopped and a finished scan to FINISHED. (2) Import requires each run to report its origin. The upstream spider listing source (add-on main branch) contains only id, progress and state. A reading of the 2.17.0 active scan source found id, progress, state and counts. Neither contains a URL. The installed bytecode confirms both. The approved [run evidence contract](run-evidence-design.md) addresses both with log, progress and message evidence. It is implemented and fixture-tested, but not yet verified live, and its migration is not applied.
+**Known import blockers.** (1) ZAP 2.17.0's active scan source maps both a stopped and a finished scan to FINISHED. (2) Import requires each run to report its origin. The upstream spider listing source (add-on main branch) contains only id, progress and state. A reading of the 2.17.0 active scan source found id, progress, state and counts. Neither contains a URL. The installed bytecode confirms both. The approved [run evidence contract](run-evidence-design.md) addresses both with log, progress and message evidence. It is implemented and fixture-tested, and its migration is applied, but it is not yet verified live.
 
 **Coverage.** The ZAP Compose draft specifies a 3 GiB container limit, a 1.5 GiB JVM heap and concurrency options of two threads per host and one host per scan. Verify their effective runtime values separately. DOM XSS rule 40026 exclusion and a one-request-per-second limit are proposals. Record their readbacks for the actual demo session. If the exclusion is enabled, disclose that DOM-based XSS testing was excluded from that run.
 
@@ -54,7 +54,7 @@ Use Windows PowerShell 5.1. Preserve the existing ZAP session while collecting i
    Pop-Location
    ```
 
-2. Determine whether the migration is already applied. The following only reads. A result of `t` means that table exists. The `run_evidence` migration is still pending and needs approval.
+2. Determine whether the migration is already applied. The following only reads. A result of `t` means that table exists. In the existing workspace all three migrations were applied on 23 November 2026; skip the rest of this step there.
 
    ```powershell
    "SELECT to_regclass('sentinelscan.assessment_runs') IS NOT NULL" | docker --context desktop-linux compose exec -T postgres psql -XAt -U sentinel -d sentinelscan

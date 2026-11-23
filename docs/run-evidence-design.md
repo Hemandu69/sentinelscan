@@ -1,6 +1,6 @@
 # Run evidence contract v1
 
-Status: approved on 23 November 2026 and implemented offline. Verified with fixtures, including sanitized lifecycle lines from a real run. Not verified against live ZAP. The storage migration `202611230001_run_evidence` is written and **not applied**; until it is, import answers EVIDENCE_STORAGE_UNAVAILABLE.
+Status: approved on 23 November 2026 and implemented offline. Verified with fixtures, including sanitized lifecycle lines from a real run. Not verified against live ZAP. The storage migration `202611230001_run_evidence` was applied to the existing workspace on 23 November 2026 after a verified backup, with existing rows unchanged. Without it, import answers EVIDENCE_STORAGE_UNAVAILABLE.
 
 ## Why listings are not enough
 

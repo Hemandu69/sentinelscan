@@ -12,6 +12,6 @@ An evaluator should be able to trace a finding from a specific authorized websit
 
 Roadmap stages 0–2 are accepted. Stage 3 has verified live provider reads and database transactions. Importing the results of a genuine operator-initiated run remains the next acceptance milestone.
 
-The assessment page can store operator run receipts, refresh observed progress and request a verified findings import. Import follows the approved run evidence contract, implemented offline. It has not been verified against live ZAP, and its storage migration is not applied. The submission guide covers that gap, offline checks, evidence requirements and one final Windows integration session. [Submission and verification guide](docs/submission.md) · [Run evidence contract](docs/run-evidence-design.md)
+The assessment page can store operator run receipts, refresh observed progress and request a verified findings import. Import follows the approved run evidence contract, implemented offline. Its storage migration is applied. It has not been verified against live ZAP. The submission guide covers that gap, offline checks, evidence requirements and one final Windows integration session. [Submission and verification guide](docs/submission.md) · [Run evidence contract](docs/run-evidence-design.md)
 
 [Architecture](ARCHITECTURE.md) · [Development guide](DEVELOPMENT.md) · [Roadmap and evidence](docs/development-roadmap.md) · [Local setup](docs/local-setup.md) · [API contract](docs/api-contract.md) · [Security model](docs/security-model.md)
