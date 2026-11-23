@@ -1,20 +1,42 @@
 # SentinelScan infrastructure
 
-Run from this directory in Windows PowerShell with Docker Desktop in Linux container mode. The independent Compose project is named sentinelscan-infrastructure. It contains PostgreSQL 17 and the stable OWASP ZAP daemon. The web and API applications are outside this repository.
+Docker Compose project `sentinelscan-infrastructure` for Docker Desktop in Linux container mode. It runs PostgreSQL 17, OWASP ZAP and the Juice Shop demonstration site. The web and API applications live in their own repositories.
+
+| Service | Host address | Network address | Notes |
+|---|---|---|---|
+| postgres | 127.0.0.1:5432 | postgres:5432 | Data in the `pgdata` named volume |
+| zap | 127.0.0.1:8090 | zap:8090 | `zap-stable:2.17.0`, 3072 MiB limit, 1536 MiB heap, 2 threads per host, 1 host per scan |
+| juice-shop | 127.0.0.1:3001 | juice-shop:3000 | Scanner target is always `http://juice-shop:3000/` |
+
+These are configured values. Running containers may predate them, so read back the effective values during an approved integration window. DOM XSS rule 40026 exclusion and a one-request-per-second limit are proposals and are not configured.
 
 ## Local setup
 
-Keep the generated .env private. On a fresh checkout copy .env.example to .env and supply two independent random secrets. The database password initializes an empty volume. Preserve it when reusing that volume. The future backend reads its ZAP key privately. Do not paste expanded Compose configuration into reports.
+Keep `.env` private. On a fresh checkout copy `.env.example` to `.env` and set two independent random secrets. The database password initializes an empty volume; preserve it when reusing that volume. Never paste expanded Compose configuration into reports.
 
-Windows clients use 127.0.0.1:5432 and 127.0.0.1:8090. On the dedicated bridge the service endpoints are postgres:5432 and zap:8090. PostgreSQL stores data in the pgdata named volume. The ZAP allowlist includes loopback and the configured bridge gateway. Confirm that the selected subnet is free on the host.
+Create missing containers without touching existing ones:
 
-## Acceptance
+```powershell
+docker --context desktop-linux compose up -d --no-recreate --wait --wait-timeout 180 postgres zap juice-shop
+```
 
-Ensure ports 5432 and 8090 are available. An existing project named sentinelscan was observed using 8090. Coordinate the handoff before starting this project. From this repository run:
+Plain `docker compose up` can replace a container whose configuration changed. Replacing ZAP discards its session and run evidence, so always keep `--no-recreate` unless a replacement is approved.
 
-    docker --context desktop-linux compose config --quiet
-    .\verify.ps1
+## Scripts
 
-The script starts both services, waits for their health checks, verifies keyed and invalid-key API requests, connects over PostgreSQL TCP, and inserts a unique marker into a diagnostic table. It restarts only this project's two services, waits for health, compares the marker, repeats the API checks and removes its own marker on success. A failed check stops the script. The diagnostic table is separate from the application schema.
+| Script | Behavior |
+|---|---|
+| `verify.ps1` | Checks existing containers, the database and ZAP credentials. Never creates or recreates anything. `-PersistenceRestart` also writes a marker in a diagnostic table and restarts PostgreSQL only. |
+| `verify-zap.cjs` | Read-only check that the key works and that missing or wrong keys are refused |
+| `observe-zap-resources.cjs` | Read-only memory, state and run samples. `--count 1..120 --interval-seconds 1..60` |
+| `rotate-zap-key.cjs` | Confirms the configured image is available locally, twice, before writing a new key. Then recreates ZAP. Requires approval. |
+| `reset-and-verify.ps1` | Reports, or with `-Remove` removes, only the containers named by `-Service`. Checks name and Compose labels first. ZAP also needs `-DiscardZapSession`. Never removes images, volumes or networks. |
 
-For status use docker compose ps. To stop this project while retaining its data use docker compose stop. Keep .env and the named volume together for subsequent runs.
+## Offline checks
+
+```powershell
+docker compose config --quiet
+node --test verify-zap.test.cjs observe-zap-resources.test.cjs safety.test.cjs
+```
+
+The tests replace Docker, Node and ZAP with recording fakes. They prove which commands the scripts issue. They do not prove Docker's or ZAP's behavior.

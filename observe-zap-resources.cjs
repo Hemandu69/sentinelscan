@@ -46,40 +46,46 @@ async function view(path, key) {
   }
   return JSON.parse(Buffer.concat(chunks).toString('utf8'));
 }
-async function sample() {
-  let phase = 'Docker service lookup';
-  console.log('Sample UTC', new Date().toISOString());
-  try {
-    const id = docker('compose', 'ps', '-a', '-q', 'zap');
-    if (!/^[a-f0-9]{12,64}$/.test(id)) throw Error();
-    phase = 'Docker inspect';
-    const state = docker('inspect', '--format',
-      '{{.State.Status}} {{.State.Health.Status}} {{.State.OOMKilled}} {{.HostConfig.Memory}} {{.HostConfig.MemoryReservation}}', id);
-    console.log('Container', id);
-    console.log('State / health / OOMKilled / memory limit bytes / reservation bytes:', state);
-    if (!state.startsWith('running healthy ')) throw Error();
-    phase = 'Docker stats';
-    const stats = docker('stats', '--no-stream', '--format', '{{.MemUsage}} | {{.MemPerc}} | {{.CPUPerc}}', id);
-    console.log('Memory usage and limit | percent of limit | CPU:', stats);
-    phase = 'ZAP version';
-    const key = parseEnv(readFileSync(join(__dirname, '.env'), 'utf8')).ZAP_API_KEY;
-    if (!key) throw Error();
-    const version = await view('core/view/version', key);
-    if (version.version !== '2.17.0') throw Error();
-    console.log('Authenticated ZAP version:', version.version);
-    phase = 'Active Scan inventory';
-    const inventory = await view('ascan/view/scans', key);
-    if (!Array.isArray(inventory.scans)) throw Error();
-    for (const row of inventory.scans) {
-      if (!/^\d{1,12}$/.test(String(row.id))) throw Error();
-      const progress = /^(?:100|[1-9]?\d)$/.test(String(row.progress)) ? Number(row.progress) : null;
-      const state = ['NOT_STARTED','RUNNING','PAUSED','FINISHED'].includes(row.state) ? row.state : 'UNKNOWN';
-      console.log(JSON.stringify({ kind: 'active', id: String(row.id), progress, providerState: state }));
+function localKey() {
+  return parseEnv(readFileSync(join(__dirname, '.env'), 'utf8')).ZAP_API_KEY;
+}
+// Operations are injected so that tests can sample without Docker, ZAP or credentials.
+function createSampler({ docker: run = docker, view: read = view, readKey = localKey, log = console.log } = {}) {
+  return async function sample() {
+    let phase = 'Docker service lookup';
+    log('Sample UTC', new Date().toISOString());
+    try {
+      const id = run('compose', 'ps', '-a', '-q', 'zap');
+      if (!/^[a-f0-9]{12,64}$/.test(id)) throw Error();
+      phase = 'Docker inspect';
+      const state = run('inspect', '--format',
+        '{{.State.Status}} {{.State.Health.Status}} {{.State.OOMKilled}} {{.HostConfig.Memory}} {{.HostConfig.MemoryReservation}}', id);
+      log('Container', id);
+      log('State / health / OOMKilled / memory limit bytes / reservation bytes:', state);
+      if (!state.startsWith('running healthy ')) throw Error();
+      phase = 'Docker stats';
+      const stats = run('stats', '--no-stream', '--format', '{{.MemUsage}} | {{.MemPerc}} | {{.CPUPerc}}', id);
+      log('Memory usage and limit | percent of limit | CPU:', stats);
+      phase = 'ZAP version';
+      const key = readKey();
+      if (!key) throw Error();
+      const version = await read('core/view/version', key);
+      if (version.version !== '2.17.0') throw Error();
+      log('Authenticated ZAP version:', version.version);
+      phase = 'Active Scan inventory';
+      const inventory = await read('ascan/view/scans', key);
+      if (!Array.isArray(inventory.scans)) throw Error();
+      for (const row of inventory.scans) {
+        if (!/^\d{1,12}$/.test(String(row.id))) throw Error();
+        const progress = /^(?:100|[1-9]?\d)$/.test(String(row.progress)) ? Number(row.progress) : null;
+        const state = ['NOT_STARTED','RUNNING','PAUSED','FINISHED'].includes(row.state) ? row.state : 'UNKNOWN';
+        log(JSON.stringify({ kind: 'active', id: String(row.id), progress, providerState: state }));
+      }
+      log('Active runs listed:', inventory.scans.length);
+    } catch {
+      throw new Error(phase + ' unavailable or unexpected. Sampling stopped.');
     }
-    console.log('Active runs listed:', inventory.scans.length);
-  } catch {
-    throw new Error(phase + ' unavailable or unexpected. Sampling stopped.');
-  }
+  };
 }
 if (require.main === module) {
   let settings;
@@ -89,9 +95,9 @@ if (require.main === module) {
     console.error('Usage: node observe-zap-resources.cjs [--count 1..120] [--interval-seconds 1..60]');
     process.exitCode = 2;
   }
-  if (settings) observe(settings, sample).catch(error => {
+  if (settings) observe(settings, createSampler()).catch(error => {
     console.error(error.message);
     process.exitCode = 1;
   });
 }
-module.exports = { options, observe };
+module.exports = { options, observe, createSampler };
