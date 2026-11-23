@@ -1,0 +1,86 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { assessment, findings, scans } from "../lib/records.ts";
+import { detailFor } from "../lib/records.ts";
+test("detail matches the requested record and only displays reconciled final counts", () => {
+  const id = "b113e0b9-c57f-43a4-86a7-51fe94507c96";
+  const timestamp = "2026-11-22T08:53:03.274Z";
+  const pending = {
+    id,
+    website: "Fixture",
+    targetUrlSnapshot: "https://example.invalid/",
+    status: "PENDING",
+    requestedAt: timestamp,
+    startedAt: null,
+    finishedAt: null,
+    findingCount: null,
+    severities: null,
+  };
+  const schema = detailFor(id);
+  assert.equal(schema.safeParse(pending).success, true);
+  assert.equal(
+    schema.safeParse({ ...pending, id: "5bc499f5-0790-4714-ad87-49e7da07de09" })
+      .success,
+    false,
+  );
+  assert.equal(
+    schema.safeParse({ ...pending, findingCount: 0, severities: [] }).success,
+    false,
+  );
+  const final = {
+    ...pending,
+    status: "COMPLETED",
+    finishedAt: timestamp,
+    findingCount: 0,
+    severities: [],
+  };
+  assert.equal(schema.safeParse(final).success, true);
+  assert.equal(
+    schema.safeParse({
+      ...final,
+      findingCount: 2,
+      severities: [{ severity: "HIGH", count: 1 }],
+    }).success,
+    false,
+  );
+});
+test("provider listings preserve unknown scope, state and progress", () => {
+  const input = {
+    provider: { endpoint: "http://127.0.0.1:8090", version: "2.17.0" },
+    runs: [{ id: "0", state: null, progress: null, reportedOrigin: null }],
+  };
+  assert.deepEqual(scans.parse(input), input);
+});
+test("records distinguish unreported findings from an empty result page", () => {
+  assert.equal(assessment.shape.findingCount.parse(null), null);
+  assert.equal(assessment.shape.findingCount.parse(0), 0);
+  assert.equal(
+    findings.safeParse({ items: null, hasMore: false }).success,
+    false,
+  );
+  assert.deepEqual(findings.parse({ items: [], hasMore: false }), {
+    items: [],
+    hasMore: false,
+  });
+});
+test("stored run responses preserve unknown progress and reject invalid percentages", async () => {
+  const { execution } = await import("../lib/records.ts");
+  const run = {
+    kind: "active",
+    scan_id: "0",
+    progress: null,
+    state: null,
+    observed_at: "2026-11-22T08:53:03.274Z",
+  };
+  assert.deepEqual(
+    execution.parse({ status: "PENDING", runs: [run] }).runs[0],
+    run,
+  );
+  assert.equal(
+    execution.safeParse({
+      status: "PENDING",
+      runs: [{ ...run, progress: 101 }],
+    }).success,
+    false,
+  );
+});
