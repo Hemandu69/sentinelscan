@@ -35,6 +35,14 @@ services:
         -config api.addrs.addr.regex=true
     ports:
       - "127.0.0.1:8090:8090"
+    volumes:
+      # Keeps the API key out of the container log. See zap-log4j2.properties.
+      - type: bind
+        source: ./zap-log4j2.properties
+        target: /home/zap/.ZAP/log4j2.properties
+        read_only: true
+        bind:
+          create_host_path: false
     networks: [local]
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS --max-time 4 -H \"X-ZAP-API-Key: $$ZAP_API_KEY\" http://127.0.0.1:8090/JSON/core/view/version/ | grep -q '\"version\"'"]

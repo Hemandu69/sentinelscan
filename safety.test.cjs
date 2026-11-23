@@ -126,11 +126,13 @@ test('reset script stops at the first failed command', windows, () => {
   assert.equal(run.calls.filter(call => mutating.test(call)).length, 1);
 });
 
-function rotation(t, { images = ['sha256:' + id('e')], imageName = 'docker.io/zaproxy/zap-stable:2.17.0', scans = [] } = {}) {
+function rotation(t, { images = ['sha256:' + id('e')], imageName = 'docker.io/zaproxy/zap-stable:2.17.0', scans = [], omit, leak, logStatus = 0 } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sentinelscan-rotation-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const original = 'POSTGRES_PASSWORD=fixture-password\nZAP_API_KEY=fixture-old\n';
   fs.writeFileSync(path.join(root, '.env'), original);
+  for (const name of ['compose.yaml', 'zap-log4j2.properties']) if (name !== omit) fs.copyFileSync(path.join(__dirname, name), path.join(root, name));
+  if (omit === 'compose.yaml') fs.writeFileSync(path.join(root, omit), 'services: {}\n');
   fs.writeFileSync(path.join(root, 'api.env'), 'WEB_ORIGIN=fixture\n');
   const calls = [], checked = [], logged = [];
   let inspections = 0, recreated = false;
@@ -142,6 +144,7 @@ function rotation(t, { images = ['sha256:' + id('e')], imageName = 'docker.io/za
       fs.renameSync(path.join(root, '.env.rotation'), path.join(root, '.env'));
       return ok('');
     }
+    if (line.includes(' logs ')) return { status: logStatus, stdout: leak ? 'x ' + /ZAP_API_KEY=(.*)/.exec(fs.readFileSync(path.join(root, '.env'), 'utf8'))[1] : 'clean', stderr: '' };
     if (line.includes(' info ')) return ok('linux');
     if (line.includes(' port zap ')) return ok('127.0.0.1:8090');
     if (line.includes('config --images')) return ok(imageName);
@@ -194,6 +197,28 @@ test('rotation verifies the image before the first write and then completes', as
   const fresh = /ZAP_API_KEY=(.*)/.exec(fs.readFileSync(path.join(f.root, '.env'), 'utf8'))[1];
   assert.deepEqual(f.checked, [['http://127.0.0.1:8090/JSON/core/view/version/', fresh]]);
   assert.ok(![...f.calls, ...f.logged].some(line => line.includes(fresh) || line.includes('fixture-old')));
+});
+
+test('rotation stops before any write when the log override is absent', async t => {
+  for (const omit of ['compose.yaml', 'zap-log4j2.properties']) {
+    const f = rotation(t, { omit });
+    await assert.rejects(f.rotate(), /log override .* missing/);
+    f.untouched();
+  }
+});
+test('rotation reports a key found in the container log without printing it', async t => {
+  for (const [options, message] of [[{ leak: true }, /appears in the container log/], [{ logStatus: 1 }, /could not be checked/]]) {
+    const f = rotation(t, options);
+    await assert.rejects(f.rotate(), error => message.test(error.message) && !/[a-f0-9]{64}/.test(error.message));
+    assert.equal(f.checked.length, 0);
+    assert.ok(!f.logged.some(line => /[a-f0-9]{64}/.test(line)));
+  }
+});
+test('ZAP logging override keeps defaults, scan lifecycle logging and hides configuration values', () => {
+  const lines = fs.readFileSync(path.join(__dirname, 'zap-log4j2.properties'), 'utf8').split(/\r?\n/);
+  for (const line of ['logger.abstractparam.name = org.parosproxy.paros.common.AbstractParam', 'logger.abstractparam.level = warn',
+    'logger.paros.level = info', 'logger.zap.level = info', 'rootLogger.appenderRef.stdout.ref = stdout'])
+    assert.ok(lines.includes(line), line);
 });
 
 function sampler(overrides = {}) {

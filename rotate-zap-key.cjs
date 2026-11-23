@@ -50,6 +50,8 @@ function createRotation({
     }
     if (docker('info', '--format', '{{.OSType}}') !== 'linux') fail('Expected the Linux Docker engine.');
     if (compose('port','zap','8090') !== '127.0.0.1:8090') fail('Unexpected ZAP binding.');
+    if (!/^\s*- type: bind\s+source: \.\/zap-log4j2\.properties\s+target: \/home\/zap\/\.ZAP\/log4j2\.properties\s/m.test(fs.readFileSync(path.join(root, 'compose.yaml'), 'utf8')) ||
+      !fs.existsSync(path.join(root, 'zap-log4j2.properties'))) fail('The log override that hides the key is missing. No credential was changed.');
     const image = requiredImage();
     const pg = container('postgres'), juice = container('juice-shop'), oldZap = container('zap');
     const text = fs.readFileSync(envFile, 'utf8');
@@ -81,6 +83,10 @@ function createRotation({
     compose('up','-d','--no-deps','--force-recreate','--pull','never','--wait','--wait-timeout','180','zap');
     if (container('zap') === oldZap || container('postgres') !== pg || container('juice-shop') !== juice) fail('Unexpected container identity or restart.');
     if (compose('port','zap','8090') !== '127.0.0.1:8090') fail('Unexpected ZAP binding after recreation.');
+    // ZAP can log configuration values at startup. Compare in memory and never print the log.
+    const output = run('docker', ['--context', 'desktop-linux', 'logs', container('zap').split(' ')[0]], { cwd: root, encoding: 'utf8', timeout: 60000, windowsHide: true, maxBuffer: 64 * 1024 * 1024 });
+    if (output.status !== 0) fail('The new container log could not be checked for the credential. Treat the new key as unverified.');
+    if ([output.stdout, output.stderr].some(text => (text ?? '').includes(fresh))) fail('The new key appears in the container log. Treat it as exposed and stop using it.');
     if (await check(origin+versionPath,fresh) !== '2.17.0') fail('Unexpected ZAP version after rotation.');
     log('Rotation verified. Restart the Fastify process to reload its key.');
   };
