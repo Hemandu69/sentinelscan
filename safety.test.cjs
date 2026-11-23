@@ -132,7 +132,7 @@ function rotation(t, { images = ['sha256:' + id('e')], imageName = 'docker.io/za
   const original = 'POSTGRES_PASSWORD=fixture-password\nZAP_API_KEY=fixture-old\n';
   fs.writeFileSync(path.join(root, '.env'), original);
   fs.writeFileSync(path.join(root, 'api.env'), 'WEB_ORIGIN=fixture\n');
-  const calls = [];
+  const calls = [], checked = [], logged = [];
   let inspections = 0, recreated = false;
   const run = (program, args) => {
     const line = [program, ...args].join(' ');
@@ -156,13 +156,13 @@ function rotation(t, { images = ['sha256:' + id('e')], imageName = 'docker.io/za
     throw Error('Unexpected command ' + line);
   };
   const request = async url => Response.json(url.endsWith('/scans/') ? { scans } : { version: '2.17.0' });
-  const rotate = createRotation({ root, apiEnv: path.join(root, 'api.env'), run, request, env: {}, platform: 'win32', check: async () => '2.17.0', log() {} });
+  const rotate = createRotation({ root, apiEnv: path.join(root, 'api.env'), run, request, env: {}, platform: 'win32', check: async (...args) => { checked.push(args); return '2.17.0'; }, log: line => logged.push(line) });
   const untouched = () => {
     assert.equal(fs.readFileSync(path.join(root, '.env'), 'utf8'), original);
     assert.ok(!fs.existsSync(path.join(root, '.env.rotation')));
     assert.ok(!calls.some(call => call.includes('--force-recreate') || call.startsWith('powershell')));
   };
-  return { rotate, calls, root, untouched };
+  return { rotate, calls, checked, logged, root, untouched };
 }
 test('rotation leaves the credential alone when the image is missing', async t => {
   const f = rotation(t, { images: [null] });
@@ -191,6 +191,9 @@ test('rotation verifies the image before the first write and then completes', as
   const recreate = f.calls.findIndex(call => call.includes('--force-recreate'));
   assert.ok(image >= 0 && image < write && write < recreate);
   assert.match(fs.readFileSync(path.join(f.root, '.env'), 'utf8'), /^POSTGRES_PASSWORD=fixture-password\nZAP_API_KEY=[a-f0-9]{64}\n$/);
+  const fresh = /ZAP_API_KEY=(.*)/.exec(fs.readFileSync(path.join(f.root, '.env'), 'utf8'))[1];
+  assert.deepEqual(f.checked, [['http://127.0.0.1:8090/JSON/core/view/version/', fresh]]);
+  assert.ok(![...f.calls, ...f.logged].some(line => line.includes(fresh) || line.includes('fixture-old')));
 });
 
 function sampler(overrides = {}) {

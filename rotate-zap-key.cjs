@@ -81,7 +81,7 @@ function createRotation({
     compose('up','-d','--no-deps','--force-recreate','--pull','never','--wait','--wait-timeout','180','zap');
     if (container('zap') === oldZap || container('postgres') !== pg || container('juice-shop') !== juice) fail('Unexpected container identity or restart.');
     if (compose('port','zap','8090') !== '127.0.0.1:8090') fail('Unexpected ZAP binding after recreation.');
-    if (await check(origin+versionPath,fresh,old) !== '2.17.0') fail('Unexpected ZAP version after rotation.');
+    if (await check(origin+versionPath,fresh) !== '2.17.0') fail('Unexpected ZAP version after rotation.');
     log('Rotation verified. Restart the Fastify process to reload its key.');
   };
 }

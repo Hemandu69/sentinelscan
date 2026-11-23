@@ -2,6 +2,15 @@
 
 const http = require('node:http');
 const fs = require('node:fs');
+const { randomInt } = require('node:crypto');
+
+// ZAP writes rejected keys to its log. A refused request must therefore never carry a real key,
+// or any character of one. Retired keys are never sent either.
+function unrelatedKey(key) {
+  const pool = [...'GHJKLMNPQRSTUVWXYZghjkmnpqrstuvwxyz'].filter(char => !key.includes(char));
+  if (pool.length < 8) throw new Error('Cannot build an unrelated invalid key');
+  return Array.from({ length: 48 }, () => pool[randomInt(pool.length)]).join('');
+}
 
 function probe(url, key) {
   return new Promise((resolve, reject) => {
@@ -28,18 +37,19 @@ function probe(url, key) {
   });
 }
 
-async function verify(url, key, retiredKey) {
+async function verify(url, key) {
   async function version() {
     const result = await probe(url, key);
     if (result.status !== 200) throw new Error('Valid-key control failed');
-    const value = JSON.parse(result.body).version;
+    let value;
+    // Parser messages quote the response, so they are never surfaced.
+    try { value = JSON.parse(result.body)?.version; } catch { /* Reported below. */ }
     if (typeof value !== 'string' || !/^\d+\.\d+\.\d+$/.test(value)) throw new Error('Unexpected ZAP version response');
     return value;
   }
   const expected = await version();
   console.log('Authenticated ZAP version:', expected);
-  const controls = [['missing', undefined], ['invalid', key + '-wrong']];
-  if (retiredKey !== undefined) controls.push(['retired', retiredKey]);
+  const controls = [['missing', undefined], ['invalid', unrelatedKey(key)]];
   for (const [label, credential] of controls) {
     for (let i = 0; i < 2; i++) {
       const result = await probe(url, credential);
@@ -67,3 +77,4 @@ if (require.main === module) {
   });
 }
 module.exports = verify;
+module.exports.unrelatedKey = unrelatedKey;
