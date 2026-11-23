@@ -230,7 +230,7 @@ test('compose keeps the key out of process arguments and preserves the approved 
   assert.ok(compose.indexOf('unset ZAP_API_KEY;') < compose.indexOf('exec /zap/zap.sh'));
   assert.match(compose, /umask 077;/);
   for (const part of ['image: docker.io/zaproxy/zap-stable:2.17.0', 'mem_limit: 3072m', '-Xmx1536m', '-addonuninstall domxss', 'scanner.delayInMs=20',
-    'pscan.maxAlertsPerRule=10', 'scanner.threadPerHost=2', 'scanner.hostPerScan=1', 'api.disablekey=false', '-H @/dev/shm/zap-key.header'])
+    '-config pscans.maxAlertsPerRule=10', 'scanner.threadPerHost=2', 'scanner.hostPerScan=1', 'api.disablekey=false', '-H @/dev/shm/zap-key.header'])
     assert.ok(compose.includes(part), part);
 });
 

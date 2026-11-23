@@ -34,7 +34,7 @@ services:
         -config scanner.threadPerHost=2
         -config scanner.hostPerScan=1
         -config scanner.delayInMs=20
-        -config pscan.maxAlertsPerRule=10
+        -config pscans.maxAlertsPerRule=10
         -config api.disablekey=false
         -config api.noKeyForSafeOps=false
         -config api.reportPermErrors=true
