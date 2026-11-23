@@ -68,7 +68,12 @@ export function buildApp(
       status = err.statusCode;
       code = "INVALID_REQUEST";
     }
-    reply.code(status).send({ error: code, requestId: req.id });
+    const reasons = err instanceof ApiError ? err.reasons : [];
+    reply.code(status).send({
+      error: code,
+      requestId: req.id,
+      ...(reasons.length ? { reasons } : {}),
+    });
   });
   app.setNotFoundHandler((req, reply) =>
     reply.code(404).send({ error: "NOT_FOUND", requestId: req.id }),

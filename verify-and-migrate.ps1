@@ -27,10 +27,11 @@ try {
     }
     $authorized = Read-Database "SELECT count(*) FROM sentinelscan.assessments a JOIN sentinelscan.targets t ON t.id=a.target_id WHERE a.id='$AssessmentId' AND a.target_url_snapshot='http://juice-shop:3000/' AND t.canonical_url=a.target_url_snapshot AND a.authorization_confirmed_at IS NOT NULL;"
     if ($authorized -ne '1') { throw 'Expected authorized assessment and target were not found.' }
-    $tables = @('targets','assessments','findings','reports')
+    # assessment_runs exists since the second migration and must survive unchanged.
+    $tables = @('targets','assessments','findings','reports','assessment_runs')
     function Read-Snapshot {
         foreach ($table in $tables) {
-            Read-Database "SELECT count(*) || ':' || md5(coalesce(string_agg(md5(to_jsonb(r)::text),'' ORDER BY r.id),'')) FROM sentinelscan.$table r;"
+            Read-Database "SELECT count(*) || ':' || md5(coalesce(string_agg(md5(to_jsonb(r)::text),'' ORDER BY md5(to_jsonb(r)::text)),'')) FROM sentinelscan.$table r;"
         }
     }
     $before = @(Read-Snapshot)
@@ -51,7 +52,9 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Client generation failed before migration.' }
     npm.cmd run migrate
     if ($LASTEXITCODE -ne 0) { throw 'Migration failed. Preserve backup and inspect migration status.' }
-    if ((Read-Database "SELECT to_regclass('sentinelscan.assessment_runs') IS NOT NULL") -ne 't') { throw 'Run storage table missing.' }
+    foreach ($created in 'assessment_runs','run_evidence') {
+        if ((Read-Database "SELECT to_regclass('sentinelscan.$created') IS NOT NULL") -ne 't') { throw "Table missing: $created" }
+    }
     $after = @(Read-Snapshot)
     for ($i=0; $i -lt $tables.Count; $i++) {
         if ($before[$i] -ne $after[$i]) { throw "Existing $($tables[$i]) changed. Preserve the backup for review." }

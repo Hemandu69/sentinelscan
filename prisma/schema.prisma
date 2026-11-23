@@ -81,6 +81,22 @@ model AssessmentRun {
  associatedAt DateTime @default(now()) @map("associated_at") @db.Timestamptz(3)
  observedAt DateTime @map("observed_at") @db.Timestamptz(3)
  @@id([assessmentId,kind])
+ evidence RunEvidence?
  @@unique([sessionKey,kind,scanId])
  @@map("assessment_runs")
+}
+
+model RunEvidence {
+ assessmentId String @db.Uuid @map("assessment_id")
+ kind String
+ run AssessmentRun @relation(fields:[assessmentId,kind],references:[assessmentId,kind],onDelete:Restrict)
+ contractVersion Int @map("contract_version")
+ sessionKey String @map("session_key")
+ outcome String
+ reasons String[]
+ facts Json
+ factsDigest String @map("facts_digest")
+ collectedAt DateTime @default(now()) @map("collected_at") @db.Timestamptz(3)
+ @@id([assessmentId,kind])
+ @@map("run_evidence")
 }

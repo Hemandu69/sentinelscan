@@ -55,6 +55,8 @@ test("capture command reports one consistent session without a provider URL or o
     reportedOrigin: "http://private.invalid",
     outcome: "UNKNOWN" as const,
     exactDemoUrl: false,
+    requests: null,
+    alerts: null,
     fields: ["id"],
   };
   const capture = await captureSession(

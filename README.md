@@ -14,7 +14,7 @@ Copy `.env.example` to `.env` on a fresh checkout and keep it private. Preserve 
 | `npm.cmd start` | Run the API |
 | `npm.cmd test`, `npm.cmd run typecheck`, `npm.cmd run lint` | Offline checks. Live suites are skipped. |
 | `npm.cmd run zap:session` | Read and display the current provider session fingerprint and its run IDs. Stores and associates nothing. |
-| `npm.cmd run inspect:zap` | Read existing provider runs |
+| `npm.cmd run inspect:zap` | Read existing provider runs. `-- --evidence <spider id> <active id>` rehearses the evidence contract read-only. |
 | `npm.cmd run test:database`, `test:run-storage`, `test:dashboard:live`, `test:zap:live` | Live suites. Run only in an approved integration window. |
 | `.\verify-and-migrate.ps1 -AssessmentId <id>` | Back up, verify and migrate an existing database. Requires approval. |
 
@@ -34,4 +34,4 @@ Copy `.env.example` to `.env` on a fresh checkout and keep it private. Preserve 
 
 `POST /api/v1/assessments/:id/cancel-tracking` works for any open assessment, including archived and non-demo websites, because it changes local records only. It never contacts ZAP and returns `providerScanStopped: false`. Association, refresh and import still require the authorized demo scope.
 
-The inventory adapter cannot produce SUCCEEDED, FAILED or CANCELLED, so import cannot complete against live ZAP today. See the documentation repository's `docs/submission.md`.
+The inventory adapter cannot produce SUCCEEDED, FAILED or CANCELLED. Only evidence contract v1 can, through `src/integrations/zap/run-log.ts` and `evidence.ts`. It is fixture-tested, not live-verified, and migration `202611230001_run_evidence` is not applied. See the documentation repository's `docs/run-evidence-design.md`.

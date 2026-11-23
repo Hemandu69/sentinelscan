@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { PrismaClient } from "@prisma/client";
+import { readFileSync } from "node:fs";
 import Fastify from "fastify";
+import { ApiError } from "../src/lib/errors.ts";
 import { test, expect, vi } from "vitest";
 import type { ZapClient } from "../src/integrations/zap/client.ts";
 import { registerRunRecords } from "../src/modules/assessments/run-records.ts";
@@ -98,15 +100,60 @@ test.runIf(process.env.npm_lifecycle_event === "test:run-storage")(
               reportedOrigin: null,
               exactDemoUrl: false,
               outcome: "RUNNING",
+              requests: 5,
+              alerts: 0,
             };
             const app = Fastify();
+            app.setErrorHandler((err, _req, reply) =>
+              reply
+                .code(err instanceof ApiError ? err.status : 500)
+                .send({ code: err instanceof ApiError ? err.message : "ERROR" }),
+            );
+            const [{ ready }] = await tx.$queryRaw<
+              { ready: boolean }[]
+            >`SELECT to_regclass('run_evidence') IS NOT NULL AS ready`;
             registerRunRecords(
               app,
               {
+                finding: tx.finding,
+                $queryRaw: tx.$queryRaw.bind(tx),
                 $transaction: (work: (inner: typeof tx) => unknown) => work(tx),
               } as unknown as PrismaClient,
-              { inspectRuns: async () => [row] } as unknown as ZapClient,
+              {
+                inspectRuns: async () => [row],
+                sessionLocation: async () =>
+                  "/home/zap/.ZAP/session/demo.session",
+                inspectAlertIds: async () => 0,
+                readAttributedFindings: async () => [],
+                inspectDemoScope: async () => ({
+                  evidence: "OBSERVED_TARGET_ORIGIN",
+                  count: 5,
+                }),
+                mentionsCredential: () => false,
+                scanProgress: async () => ({
+                  hosts: [
+                    {
+                      origin: "http://juice-shop:3000",
+                      rules: {
+                        complete: 51,
+                        skipped: 1,
+                        running: 0,
+                        pending: 0,
+                        unknown: 0,
+                      },
+                    },
+                  ],
+                }),
+              } as unknown as ZapClient,
               async () => sessionKey,
+              async () => ({
+                containerStartedAt: "2026-11-23T08:10:29.353446119Z",
+                text: readFileSync(
+                  new URL("./fixtures/zap-run.log", import.meta.url),
+                  "utf8",
+                ),
+                errors: "",
+              }),
             );
             const post = (name: string, payload: object = {}) =>
               app.inject({
@@ -136,14 +183,38 @@ test.runIf(process.env.npm_lifecycle_event === "test:run-storage")(
                 where: { id },
               });
               expect(stored.startedAt).toBeInstanceOf(Date);
-              expect((await post("zap-import")).statusCode).toBe(409);
-              expect(
-                (await post("cancel-tracking", { confirmed: true })).json(),
-              ).toMatchObject({ status: "CANCELLED" });
+              row.state = "FINISHED";
+              row.outcome = "UNKNOWN";
+              row.progress = 100;
+              const imported = await post("zap-import");
+              const final = ready ? "COMPLETED" : "CANCELLED";
+              if (ready) {
+                // Fixture evidence only. Everything rolls back below.
+                for (const response of [imported, await post("zap-import")])
+                  expect(response.json()).toEqual({
+                    status: "COMPLETED",
+                    findingCount: 0,
+                  });
+                const [{ n }] = await tx.$queryRaw<
+                  { n: number }[]
+                >`SELECT count(*)::int AS n FROM run_evidence WHERE assessment_id=${id}::uuid AND outcome='SUCCEEDED'`;
+                expect(n).toBe(2);
+                expect(
+                  (await post("cancel-tracking", { confirmed: true }))
+                    .statusCode,
+                ).toBe(409);
+              } else {
+                expect(imported.json().code).toBe(
+                  "EVIDENCE_STORAGE_UNAVAILABLE",
+                );
+                expect(
+                  (await post("cancel-tracking", { confirmed: true })).json(),
+                ).toMatchObject({ status: "CANCELLED" });
+              }
               const execution = await app.inject(
                 `/api/v1/assessments/${id}/execution`,
               );
-              expect(execution.json()).toMatchObject({ status: "CANCELLED" });
+              expect(execution.json()).toMatchObject({ status: final });
             } finally {
               await app.close();
             }

@@ -3,6 +3,14 @@ import type { Prisma, PrismaClient } from "@prisma/client";
 import type { FastifyInstance } from "fastify";
 import type { ZapClient } from "../../integrations/zap/client.ts";
 import { providerSession } from "../../integrations/zap/session.ts";
+import {
+  canonical,
+  collectEvidence,
+  contractVersion,
+  digest,
+  judge,
+} from "../../integrations/zap/evidence.ts";
+import { readContainerLog } from "../../integrations/zap/run-log.ts";
 import { registeredScope } from "../../lib/security/destination.ts";
 import { ApiError } from "../../lib/errors.ts";
 import { version as consentVersion } from "./consent.ts";
@@ -90,6 +98,7 @@ export function registerRunRecords(
   db: PrismaClient,
   zap: ZapClient,
   getSession = () => providerSession(zap),
+  readLog = readContainerLog,
 ) {
   const base = "/api/v1/assessments/:id";
   app.get(base + "/execution", async (req) => {
@@ -273,29 +282,53 @@ export function registerRunRecords(
       throw new ApiError(429, "IMPORT_BUSY");
     importing.add(id);
     try {
-      async function verify() {
-        const session = await getSession();
-        const observations = [];
-        for (const run of snapshot.runs) {
-          if (run.session_key !== session)
-            throw new ApiError(409, "ZAP_SESSION_CHANGED");
-          const sample = await observe(zap, run.kind, run.scan_id);
-          if (
-            sample.outcome !== "SUCCEEDED" ||
-            sample.progress !== 100 ||
-            sample.origin !== new URL(demo).origin
-          )
-            throw new ApiError(409, "ZAP_SUCCESS_OR_SCOPE_UNVERIFIED");
-          observations.push({ run, sample, observedAt: new Date() });
-        }
-        if ((await getSession()) !== session)
+      const [storage] = await db.$queryRaw<
+        { ready: boolean }[]
+      >`SELECT to_regclass('run_evidence') IS NOT NULL AS ready`;
+      if (!storage?.ready)
+        throw new ApiError(503, "EVIDENCE_STORAGE_UNAVAILABLE");
+      const find = (kind: Kind) => {
+        const run = snapshot.runs.find((r) => r.kind === kind)!;
+        return { scanId: run.scan_id, associatedAt: run.associated_at };
+      };
+      const receipts = { spider: find("spider"), active: find("active") };
+      async function collect() {
+        const facts = await collectEvidence(
+          zap,
+          getSession,
+          readLog,
+          receipts,
+          demo,
+        );
+        if (snapshot.runs.some((run) => run.session_key !== facts.sessionKey))
           throw new ApiError(409, "ZAP_SESSION_CHANGED");
-        return observations;
+        return { facts, verdict: judge(facts, receipts) };
       }
-      await verify();
-      const active = snapshot.runs.find((r) => r.kind === "active")!;
-      const findings = await zap.readAttributedFindings(active.scan_id, demo);
-      const finalObservations = await verify();
+      const initial = await collect();
+      const ended = (["active", "spider"] as const)
+        .map((kind) => initial.verdict[kind].outcome)
+        .find((outcome) => outcome === "FAILED" || outcome === "CANCELLED");
+      const unverified = [
+        ...new Set([
+          ...initial.verdict.spider.reasons,
+          ...initial.verdict.active.reasons,
+        ]),
+      ].sort();
+      if (
+        !ended &&
+        (initial.verdict.spider.outcome !== "SUCCEEDED" ||
+          initial.verdict.active.outcome !== "SUCCEEDED")
+      )
+        throw new ApiError(409, "ZAP_SUCCESS_OR_SCOPE_UNVERIFIED", unverified);
+      const findings = ended
+        ? []
+        : await zap.readAttributedFindings(receipts.active.scanId, demo);
+      if (!ended && findings.length !== initial.facts.attributedAlerts)
+        throw new ApiError(409, "ZAP_ALERT_SET_CHANGED");
+      const confirmed = await collect();
+      if (canonical(confirmed.facts) !== canonical(initial.facts))
+        throw new ApiError(409, "ZAP_EVIDENCE_CHANGED");
+      const observedAt = new Date();
       return await db.$transaction(async (tx) => {
         const status = await eligible(tx, id);
         if (status === "COMPLETED")
@@ -314,15 +347,33 @@ export function registerRunRecords(
           ].includes(status)
         )
           throw new ApiError(409, "ASSESSMENT_INELIGIBLE");
+        // Receipts must still be the rows that the evidence was collected for.
+        for (const run of snapshot.runs) {
+          const progress = confirmed.facts.listing[run.kind]!;
+          const updated =
+            await tx.$executeRaw`UPDATE assessment_runs SET state=${progress.state}, progress=${progress.progress}, observed_at=GREATEST(observed_at,${observedAt}) WHERE kind=${run.kind} AND assessment_id=${id}::uuid AND session_key=${run.session_key} AND scan_id=${run.scan_id}`;
+          if (updated !== 1) throw new ApiError(409, "OBSERVATION_CHANGED");
+          const { outcome, reasons } = confirmed.verdict[run.kind];
+          const inserted =
+            await tx.$executeRaw`INSERT INTO run_evidence(assessment_id,kind,contract_version,session_key,outcome,reasons,facts,facts_digest,collected_at) VALUES (${id}::uuid,${run.kind},${contractVersion},${run.session_key},${outcome},${reasons}::text[],${canonical(confirmed.facts)}::jsonb,${digest(confirmed.facts)},${observedAt}) ON CONFLICT DO NOTHING`;
+          if (inserted !== 1) throw new ApiError(409, "OBSERVATION_CHANGED");
+        }
+        if (ended) {
+          await tx.assessment.update({
+            where: { id },
+            data: {
+              status: ended,
+              finishedAt: observedAt,
+              errorCode: "ZAP_RUN_" + ended,
+            },
+          });
+          return { status: ended, findingCount: null };
+        }
         await tx.assessment.update({
           where: { id },
           data: { status: "PROCESSING_RESULTS" },
         });
         const findingCount = await persistFinalFindingsTx(tx, id, findings);
-        for (const { run, sample, observedAt } of finalObservations) {
-          const updated = await tx.$executeRaw`UPDATE assessment_runs SET state=${sample.state}, progress=${sample.progress}, observed_at=GREATEST(observed_at,${observedAt}) WHERE kind=${run.kind} AND assessment_id=${id}::uuid AND session_key=${run.session_key} AND scan_id=${run.scan_id}`;
-          if (updated !== 1) throw new ApiError(409, "OBSERVATION_CHANGED");
-        }
         return { status: "COMPLETED", findingCount };
       });
     } finally {

@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import Fastify from "fastify";
 import type { PrismaClient } from "@prisma/client";
 import { expect, test, vi, beforeEach, afterEach } from "vitest";
@@ -7,15 +8,21 @@ import { ApiError } from "../src/lib/errors.ts";
 const id = "b113e0b9-c57f-43a4-86a7-51fe94507c96",
   target = "http://juice-shop:3000/",
   session = "a".repeat(64);
+const completedLog = readFileSync(
+  new URL("./fixtures/zap-run.log", import.meta.url),
+  "utf8",
+);
 type Row = {
   kind: string;
   scan_id: string;
   session_key: string;
   observed_at: Date;
+  associated_at: Date;
   state: string;
   progress: number;
 };
 function setup() {
+  const f = { storage: true, failInsert: false, text: completedLog, alerts: 0, location: "/home/zap/.ZAP/session/demo.session" };
   const updateReceipt = vi.fn(() => true);
   const state = {
     authorized: true,
@@ -24,9 +31,11 @@ function setup() {
     status: "PENDING",
     runs: [] as Row[],
     count: 0,
+    evidence: [] as unknown[][],
   };
   const db = {
     finding: { count: async () => state.count },
+    $queryRaw: async () => [{ ready: f.storage }],
     async $transaction<T>(fn: (tx: unknown) => Promise<T>) {
       const draft = structuredClone(state);
       const tx = {
@@ -43,7 +52,9 @@ function setup() {
         },
         async $executeRaw(parts: TemplateStringsArray, ...args: unknown[]) {
           const sql = parts.join("?");
-          if (sql.startsWith("INSERT INTO assessment_runs"))
+          if (sql.startsWith("INSERT INTO run_evidence")) {
+            draft.evidence.push(args);
+          } else if (sql.startsWith("INSERT INTO assessment_runs"))
             draft.runs.push({
               kind: String(args[1]),
               scan_id: String(args[2]),
@@ -51,6 +62,7 @@ function setup() {
               state: String(args[4]),
               progress: Number(args[5]),
               observed_at: new Date(),
+              associated_at: new Date("2026-11-24T00:00:00Z"),
             });
           else if (sql.startsWith("UPDATE assessments SET status"))
 {
@@ -79,6 +91,7 @@ function setup() {
         finding: {
           count: async () => draft.count,
           createMany: async ({ data }: { data: unknown[] }) => {
+            if (f.failInsert) throw Error("fixture failure");
             draft.count += data.length;
           },
         },
@@ -95,10 +108,24 @@ function setup() {
     reportedOrigin: "http://juice-shop:3000",
     exactDemoUrl: true,
     outcome: "RUNNING",
+    requests: 5,
+    alerts: 0,
   };
   const zap = {
     inspectRuns: vi.fn(async () => [row]),
     readAttributedFindings: vi.fn(async () => [] as unknown[]),
+    sessionLocation: async () => f.location,
+    inspectAlertIds: async () => f.alerts,
+    scanProgress: vi.fn(async () => ({
+      hosts: [
+        {
+          origin: "http://juice-shop:3000",
+          rules: { complete: 51, skipped: 1, running: 0, pending: 0, unknown: 0 },
+        },
+      ],
+    })),
+    inspectDemoScope: async () => ({ evidence: "OBSERVED_TARGET_ORIGIN", count: 5 }),
+    mentionsCredential: () => false,
   };
   const stamp = vi.fn(async () => session);
   const open = () => {
@@ -106,13 +133,18 @@ function setup() {
     app.setErrorHandler((err, req, reply) =>
       reply
         .code(err instanceof ApiError ? err.status : 500)
-        .send({ code: (err as Error).message }),
+        .send({ code: (err as Error).message, ...(err instanceof ApiError && err.reasons.length ? { reasons: err.reasons } : {}) }),
     );
     registerRunRecords(
       app,
       db as unknown as PrismaClient,
       zap as unknown as ZapClient,
       stamp,
+      async () => ({
+        containerStartedAt: "2026-11-23T08:10:29.353446119Z",
+        text: f.text,
+        errors: "",
+      }),
     );
     return app;
   };
@@ -132,6 +164,7 @@ function setup() {
       confirmedOperatorReceipt: true,
     });
   return {
+    f,
     state,
     updateReceipt,
     zap,
@@ -155,7 +188,6 @@ test("losing a receipt at final write rolls back both run snapshots and completi
     await f.bind("spider");
     await f.bind("active");
     f.row.state = "FINISHED";
-    f.row.outcome = "SUCCEEDED"; // Fixture attestation.
     f.row.progress = 100;
     f.updateReceipt.mockReturnValueOnce(true).mockReturnValueOnce(false);
     expect((await f.call("zap-import")).json().code).toBe("OBSERVATION_CHANGED");
@@ -175,7 +207,6 @@ test("duplicate receipt and service restart retain both typed IDs; empty verifie
     await f.restart();
     expect(f.state.runs).toHaveLength(2);
     f.row.state = "FINISHED";
-    f.row.outcome = "SUCCEEDED"; // Independent outcome evidence supplied by the fixture.
     f.row.progress = 100;
     expect((await f.call("zap-import")).json()).toEqual({
       status: "COMPLETED",
@@ -198,6 +229,7 @@ test.each(["FINISHED", "RUNNING", "PAUSED", "STOPPED", "FAILED"])(
     try {
       await f.bind("spider");
       await f.bind("active");
+      f.f.text = ""; // No trustworthy run evidence.
       f.row.state = state;
       f.row.progress = 100;
       expect((await f.call("zap-import")).statusCode).toBe(409);
@@ -271,8 +303,8 @@ test("failed persistence validation rolls processing state back; retry uses the 
     await f.bind("spider");
     await f.bind("active");
     f.row.state = "FINISHED";
-    f.row.outcome = "SUCCEEDED"; // Independent outcome evidence supplied by the fixture.
     f.row.progress = 100;
+    f.f.alerts = f.row.alerts = 1;
     f.zap.readAttributedFindings.mockResolvedValueOnce([
       {
         url: "https://outside.invalid/",
@@ -473,6 +505,7 @@ test("a run that stops being listed as RUNNING keeps an unknown outcome and stay
     await f.bind("active");
     f.row.state = "FINISHED";
     f.row.outcome = "UNKNOWN";
+    f.f.text = "";
     f.row.progress = 100;
     expect((await f.call("zap-sync")).json()).toMatchObject({
       status: "ACTIVE_SCAN_RUNNING",
@@ -485,23 +518,6 @@ test("a run that stops being listed as RUNNING keeps an unknown outcome and stay
     await f.close();
   }
 });
-test("import stays blocked without a reported origin, even with a supplied success", async () => {
-  const f = setup();
-  try {
-    await f.bind("spider");
-    await f.bind("active");
-    f.row.state = "FINISHED";
-    f.row.outcome = "SUCCEEDED"; // Fixture attestation.
-    f.row.progress = 100;
-    f.row.reportedOrigin = null as unknown as string;
-    expect((await f.call("zap-import")).json().code).toBe(
-      "ZAP_SUCCESS_OR_SCOPE_UNVERIFIED",
-    );
-    expect(f.zap.readAttributedFindings).not.toHaveBeenCalled();
-  } finally {
-    await f.close();
-  }
-});
 test("demo scope disabled is reported distinctly and blocks provider access", async () => {
   vi.stubEnv("SENTINELSCAN_DEMO_TARGET", "");
   const f = setup();
@@ -510,6 +526,106 @@ test("demo scope disabled is reported distinctly and blocks provider access", as
     expect(response.statusCode).toBe(403);
     expect(response.json().code).toBe("DEMO_SCOPE_DISABLED");
     expect(f.stamp).not.toHaveBeenCalled();
+  } finally {
+    await f.close();
+  }
+});
+
+async function finished() {
+  const f = setup();
+  await f.bind("spider");
+  await f.bind("active");
+  f.row.state = "FINISHED";
+  f.row.outcome = "UNKNOWN"; // The inventory alone never attests success.
+  f.row.progress = 100;
+  return f;
+}
+test("contract evidence completes import, stores both evidence rows and repeats without provider access", async () => {
+  const f = await finished();
+  try {
+    f.row.reportedOrigin = null as unknown as string; // As in ZAP 2.17.0.
+    expect((await f.call("zap-import")).json()).toEqual({ status: "COMPLETED", findingCount: 0 });
+    expect(f.state.evidence.map((row) => [row[1], row[2], row[3], row[4]])).toEqual([
+      ["spider", 1, session, "SUCCEEDED"],
+      ["active", 1, session, "SUCCEEDED"],
+    ]);
+    f.zap.scanProgress.mockClear();
+    expect((await f.call("zap-import")).json()).toEqual({ status: "COMPLETED", findingCount: 0 });
+    expect(f.zap.scanProgress).not.toHaveBeenCalled();
+    expect(f.state.evidence).toHaveLength(2);
+  } finally {
+    await f.close();
+  }
+});
+test("missing evidence reports fixed reason codes and stores nothing", async () => {
+  const f = await finished();
+  try {
+    f.f.text = completedLog.split("\n").slice(1).join("\n");
+    const response = await f.call("zap-import");
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toEqual({
+      code: "ZAP_SUCCESS_OR_SCOPE_UNVERIFIED",
+      reasons: ["LOG_TRUNCATED"],
+    });
+    expect(f.state).toMatchObject({ status: "ACTIVE_SCAN_RUNNING", evidence: [], count: 0 });
+    expect(f.zap.readAttributedFindings).not.toHaveBeenCalled();
+  } finally {
+    await f.close();
+  }
+});
+test("evidence that changes between collections stores nothing", async () => {
+  const f = await finished();
+  try {
+    f.zap.readAttributedFindings.mockImplementationOnce(async () => {
+      f.row.requests = 6;
+      return [];
+    });
+    expect((await f.call("zap-import")).json().code).toBe("ZAP_EVIDENCE_CHANGED");
+    expect(f.state).toMatchObject({ evidence: [], count: 0, status: "ACTIVE_SCAN_RUNNING" });
+  } finally {
+    await f.close();
+  }
+});
+test("a retrieved finding set that differs from the attributed count stores nothing", async () => {
+  const f = await finished();
+  try {
+    f.f.alerts = f.row.alerts = 2;
+    expect((await f.call("zap-import")).json().code).toBe("ZAP_ALERT_SET_CHANGED");
+    expect(f.state.evidence).toEqual([]);
+  } finally {
+    await f.close();
+  }
+});
+test.each([
+  ["CANCELLED", "[ZAP-IO-Server-1-1] INFO  org.parosproxy.paros.core.scanner.Scanner - scanner with ID 0 stopped"],
+  ["FAILED", "[ZAP-Scanner-0] ERROR org.parosproxy.paros.core.scanner.Scanner - An error occurred while active scanning:"],
+])("explicit %s evidence closes the assessment without findings", async (status, line) => {
+  const f = await finished();
+  try {
+    f.f.text = completedLog.replace(/^.*scanner with ID 0 completed.*$/m, (row) => "2026-11-23T08:19:51.601800000Z 561890 " + line + "\n" + row);
+    expect((await f.call("zap-import")).json()).toEqual({ status, findingCount: null });
+    expect(f.state).toMatchObject({ status, count: 0 });
+    expect(f.state.evidence.map((row) => row[4])).toEqual(["SUCCEEDED", status]);
+    expect(f.zap.readAttributedFindings).not.toHaveBeenCalled();
+    expect((await f.call("zap-import")).statusCode).toBe(409);
+  } finally {
+    await f.close();
+  }
+});
+test("absent evidence storage and a failed insert leave the assessment unchanged", async () => {
+  const f = await finished();
+  try {
+    f.f.storage = false;
+    expect((await f.call("zap-import")).json().code).toBe("EVIDENCE_STORAGE_UNAVAILABLE");
+    expect(f.zap.scanProgress).not.toHaveBeenCalled();
+    f.f.storage = true;
+    f.f.failInsert = true;
+    f.f.alerts = f.row.alerts = 1;
+    f.zap.readAttributedFindings.mockResolvedValueOnce([
+      { url: target, name: "Fixture", sourceSeverity: "Low", normalizedSeverity: "LOW", description: "fixture", confidence: "Low" },
+    ]);
+    expect((await f.call("zap-import")).statusCode).toBe(500);
+    expect(f.state).toMatchObject({ status: "ACTIVE_SCAN_RUNNING", evidence: [], count: 0 });
   } finally {
     await f.close();
   }

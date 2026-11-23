@@ -10,11 +10,17 @@ const progressSchema = z
   .union([z.string().regex(/^\d{1,3}$/), z.number()])
   .transform(Number)
   .pipe(z.number().int().min(0).max(100));
+const total = (value: unknown) =>
+  z
+    .union([z.string().regex(/^\d{1,9}$/), z.number()])
+    .transform(Number)
+    .pipe(z.number().int().nonnegative())
+    .safeParse(value).data ?? null;
 const malformed = () => new ApiError(502, "ZAP_MALFORMED_RESPONSE");
 const oversized = () => new ApiError(502, "ZAP_RESPONSE_TOO_LARGE");
 const denied = () => new ApiError(502, "ZAP_INVALID_CREDENTIALS");
 const unavailable = () => new ApiError(503, "ZAP_UNAVAILABLE");
-async function readJson(response: Response) {
+async function readJson(response: Response, limit: number) {
   if (Number(response.headers.get("content-length")) > limit) throw oversized();
   if (!response.body) throw malformed();
   const chunks: Uint8Array[] = [];
@@ -47,6 +53,7 @@ export function createZapClient(
     path: string,
     schema: z.ZodType<T>,
     params?: Record<string, string>,
+    maxBytes = limit,
   ): Promise<T> {
     if (!key?.trim()) throw new ApiError(503, "ZAP_MISSING_CREDENTIALS");
     const url = new URL("/JSON/" + path + "/", "http://127.0.0.1:8090");
@@ -64,7 +71,7 @@ export function createZapClient(
       if (response.status === 504) throw new ApiError(504, "ZAP_TIMEOUT");
       if (!response.ok && response.status !== 400)
         throw new ApiError(502, "ZAP_PROVIDER_ERROR");
-      const body = await readJson(response);
+      const body = await readJson(response, maxBytes);
       const error = z.object({ code: z.string() }).safeParse(body);
       if (
         error.success &&
@@ -106,6 +113,10 @@ export function createZapClient(
     return response.alertsIds;
   }
   return {
+    // Compares in memory so that no caller needs the key itself.
+    mentionsCredential(text: string) {
+      return Boolean(key?.trim()) && text.includes(key!);
+    },
     async sessionLocation() {
       const result = await view(
         "core/view/sessionLocation",
@@ -157,6 +168,8 @@ export function createZapClient(
             row.url === "http://juice-shop:3000/" ||
             row.url === "http://juice-shop:3000",
           state: state.success ? state.data : null,
+          requests: total(row.reqCount),
+          alerts: total(row.alertCount),
           fields: Object.keys(row)
             .filter((field) => /^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(field))
             .sort(),
@@ -235,6 +248,8 @@ export function createZapClient(
             }),
           }),
           { id },
+          // ZAP returns whole bodies here. Only the request header is kept.
+          32 * limit,
         );
         if (message.id !== id) throw malformed();
         // Relative request-targets lack a verified scheme. Leave scope unknown.

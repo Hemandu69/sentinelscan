@@ -1,10 +1,32 @@
 import { configuredZapClient } from "./client.ts";
+import { collectEvidence, judge } from "./evidence.ts";
+import { readContainerLog } from "./run-log.ts";
+import { providerSession } from "./session.ts";
 import { ApiError } from "../../lib/errors.ts";
 
 const zap = configuredZapClient();
 async function inspect() {
   console.log("Configured ZAP version", await zap.version());
   const [mode, kind, id, ...extra] = process.argv.slice(2);
+  if (mode === "--evidence") {
+    // Read-only rehearsal of contract v1. Nothing is stored, and no receipt is checked.
+    if (![kind, id].every((v) => /^\d{1,12}$/.test(v ?? "")) || extra.length)
+      throw new ApiError(400, "EXPECTED_SPIDER_AND_ACTIVE_ID");
+    const associatedAt = new Date();
+    const receipts = {
+      spider: { scanId: kind, associatedAt },
+      active: { scanId: id, associatedAt },
+    };
+    const facts = await collectEvidence(
+      zap,
+      () => providerSession(zap),
+      readContainerLog,
+      receipts,
+      "http://juice-shop:3000/",
+    );
+    console.log(JSON.stringify({ facts, judgement: judge(facts, receipts) }));
+    return;
+  }
   if (mode) {
     if (
       mode !== "--scope" ||

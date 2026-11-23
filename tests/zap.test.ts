@@ -239,6 +239,8 @@ test("compatibility probe reads existing run metadata without printing target va
         progress: null,
         reportedOrigin: "https://fixture.invalid",
         exactDemoUrl: false,
+        requests: null,
+        alerts: null,
         outcome: "UNKNOWN",
         fields: ["id", "state", "url"],
       },
