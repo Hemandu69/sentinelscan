@@ -32,9 +32,9 @@ The diagnostic CLI and HTTP discovery read the provider inventory. Global alerts
 | POST /zap-association | kind, scanId, sessionKey, target, confirmedOperatorReceipt=true. Returns the saved row. |
 | POST /zap-sync | Empty object. Refreshes the saved observations and returns status and runs. |
 | POST /cancel-tracking | confirmed=true. Closes any open assessment locally, including archived and non-demo websites. Returns status and providerScanStopped=false. Never contacts ZAP. |
-| POST /zap-import | Empty object. Returns status and findingCount after verified import or idempotent replay. |
+| POST /zap-import | Empty object. Returns status and findingCount after verified import or idempotent replay. Missing evidence answers 409 with fixed `reasons` codes. Trustworthy stop or error evidence closes the assessment as CANCELLED or FAILED with a null findingCount. |
 
-GET /api/v1/integrations/zap/session-fingerprint returns a nonsecret sessionKey. Watchtower does not call it. The operator captures it with `npm.cmd run zap:session` in the API checkout while the run is in the current session. A receipt requires evidence captured during that session. The production inventory adapter currently has no trusted successful terminal cause. See [submission](submission.md) for the import gate.
+GET /api/v1/integrations/zap/session-fingerprint returns a nonsecret sessionKey. Watchtower does not call it. The operator captures it with `npm.cmd run zap:session` in the API checkout while the run is in the current session. A receipt requires evidence captured during that session. The inventory alone has no trusted terminal cause. Import follows the [run evidence contract](run-evidence-design.md).
 
 ## Operator-controlled assessment records
 

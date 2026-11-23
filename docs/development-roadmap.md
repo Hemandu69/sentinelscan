@@ -18,7 +18,7 @@ The separate "Stage 6 · Final Integration, Reliability & Submission Readiness" 
 
 Verified read-only on November 23: both migrations are recorded as finished, their checksums equal the committed files, and all columns, keys and checks match. The table holds two receipts saved during the November 23 run. Their fingerprint equals the one computed from the stopped ZAP container and its demo session, so the receipt and refresh SQL of that day worked against real PostgreSQL. Import has not run.
 
-That run's log shows a spider that completed, and an active scan with 51 rules completed, 1 skipped, 0 stopped and 24 alerts, without DOM XSS rules. It cannot be imported under the current gate, and its in-memory run list ended with the container. The November 22 run remains UNKNOWN.
+That run's log shows a spider that completed, and an active scan with 51 rules completed, 1 skipped, 0 stopped and 24 alerts, without DOM XSS rules. It cannot be imported: its in-memory run list ended with the container and its log contains the API key. Its lifecycle lines, sanitized, are the evidence fixture. The November 22 run remains UNKNOWN.
 
 ## Stage 3 persistence evidence
 
