@@ -1,0 +1,41 @@
+{
+  "name": "sentinelscan-api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": "24.x"
+  },
+  "scripts": {
+    "start": "node --env-file=.env --experimental-strip-types src/server.ts",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src tests",
+    "inspect:zap": "node --env-file=.env --experimental-strip-types src/integrations/zap/inspect.ts",
+    "test:zap:live": "node --env-file=.env node_modules/vitest/vitest.mjs run tests/zap-live.test.ts",
+    "test:run-storage": "node --env-file=.env node_modules/vitest/vitest.mjs run tests/run-storage-live.test.ts",
+    "test:dashboard:live": "node --env-file=.env node_modules/vitest/vitest.mjs run tests/dashboard-live.test.ts",
+    "test:database": "node --env-file=.env node_modules/vitest/vitest.mjs run tests/database.test.ts",
+    "test": "vitest run",
+    "format": "prettier --write src tests",
+    "generate": "prisma generate",
+    "migrate": "prisma migrate deploy"
+  },
+  "dependencies": {
+    "@prisma/client": "6.19.3",
+    "fastify": "5.12.3",
+    "ipaddr.js": "2.5.0",
+    "zod": "4.5.4"
+  },
+  "devDependencies": {
+    "@types/node": "^24",
+    "eslint": "9.39.5",
+    "prettier": "3.9.6",
+    "prisma": "6.19.3",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.72.1",
+    "vitest": "3.2.7"
+  },
+  "overrides": {
+    "vite": "6.4.3"
+  }
+}
