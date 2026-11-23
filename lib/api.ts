@@ -136,6 +136,8 @@ async function send(
       ZAP_PROVIDER_ERROR: "ZAP reported an error.",
       ZAP_MALFORMED_RESPONSE: "ZAP returned incomplete or unexpected data.",
       ZAP_RESPONSE_TOO_LARGE: "ZAP returned more data than can be verified.",
+      ZAP_SESSION_NOT_SAVED:
+        "ZAP has no saved session. Create a named session before running scans.",
       ZAP_RUN_AMBIGUOUS: "ZAP lists this run ID more than once.",
       UNVERIFIED_PROVIDER_VERSION:
         "ZAP is not the version this workspace was verified with.",
