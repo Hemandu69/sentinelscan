@@ -6,7 +6,7 @@ Watchtower lets an evaluator register a website, confirm permission for an exact
 
 **Readiness.** A live scan-to-database demonstration is still outstanding. Historical Active Scan 0 has outcome UNKNOWN. Offline import tests supply a trusted result in a fixture. The deployed inventory adapter cannot establish SUCCEEDED, even after an infrastructure recovery. Final acceptance requires a verified, session-bound source for terminal cause and authorized scope. A successful connectivity check cannot resolve this gap.
 
-**Known import blockers.** (1) ZAP 2.17.0's active scan source maps both a stopped and a finished scan to FINISHED. (2) Import requires each run to report its origin. The upstream spider listing source (add-on main branch) contains only id, progress and state. A reading of the 2.17.0 active scan source found id, progress, state and counts. Neither contains a URL. This is source evidence, not a live reading of the installed versions, so no workaround is implemented. The scope inspection command below is not part of import.
+**Known import blockers.** (1) ZAP 2.17.0's active scan source maps both a stopped and a finished scan to FINISHED. (2) Import requires each run to report its origin. The upstream spider listing source (add-on main branch) contains only id, progress and state. A reading of the 2.17.0 active scan source found id, progress, state and counts. Neither contains a URL. The installed bytecode confirms both. See the [proposed evidence contract](run-evidence-design.md). No workaround is implemented, and the scope inspection command below is not part of import.
 
 **Coverage.** The ZAP Compose draft specifies a 3 GiB container limit, a 1.5 GiB JVM heap and concurrency options of two threads per host and one host per scan. Verify their effective runtime values separately. DOM XSS rule 40026 exclusion and a one-request-per-second limit are proposals. Record their readbacks for the actual demo session. If the exclusion is enabled, disclose that DOM-based XSS testing was excluded from that run.
 
@@ -36,6 +36,8 @@ The inventory normalizer confirms RUNNING. FINISHED, a percentage of 100 and unr
 ## Final Windows integration window
 
 Use Windows PowerShell 5.1. Preserve the existing ZAP session while collecting its evidence. If Docker Desktop still reports HTTP 500, pause the session and preserve all containers and volumes. Run each command after its predecessor succeeds. For initial private environment setup follow [Local setup](local-setup.md).
+
+0. Rotate the exposed ZAP key first, following the infrastructure README.
 
 1. In the infrastructure checkout verify the Linux engine, inspect existing services and run the authenticated version check. Capture the assessment state and run inventory before changing services or applying migrations.
 
@@ -93,6 +95,6 @@ npm.cmd run inspect:zap -- --scope spider 0
 npm.cmd run inspect:zap -- --scope active 0
 ```
 
-The first command reads this Spider's results. The second reads only messages referenced by this Active Scan and returns a count and scope classification. Empty or ambiguous evidence, a changed message list, and a review limit prevent a positive scope conclusion. A matching observed destination corroborates the target; it does not prove original authorization, identify the operator or distinguish cancellation from successful completion.
+The first command reads this Spider's results. The second reads only messages referenced by this Active Scan and returns a count and scope classification. Empty or ambiguous evidence, a changed message list, a failed read and more than 16,000 messages prevent a positive scope conclusion. A matching observed destination corroborates the target; it does not prove original authorization, identify the operator or distinguish cancellation from successful completion.
 
 The importer reads each alert listed for the bound active scan, preserves provider severity and confidence, normalizes severity for display, and redacts sensitive evidence. PostgreSQL commits findings and completion together. Watchtower groups persisted findings by severity and shows the provider's remediation per finding. The print view reads every page, rejects inconsistent totals and only then enables printing. Chrome checks in `tests/browser` use synthetic data and do not contact ZAP or PostgreSQL.

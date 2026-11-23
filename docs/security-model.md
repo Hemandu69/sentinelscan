@@ -4,7 +4,7 @@ SentinelScan is a single shared workspace on one machine. Authentication is inte
 
 ## Network and credentials
 
-The API binds to loopback and checks the configured Host header. Requests carrying a browser Origin must match the configured local web origin. PostgreSQL and ZAP are published only on loopback. Watchtower requests application API routes. The configured ZAP administration address is independent of the submitted website. The environment files may be synchronized if the checkouts are inside a cloud-synced folder. Keep the ZAP key and database credentials private to the local services that require them.
+The API binds to loopback and checks the configured Host header. Requests carrying a browser Origin must match the configured local web origin. PostgreSQL and ZAP are published only on loopback. Watchtower requests application API routes. The configured ZAP administration address is independent of the submitted website. The environment files may be synchronized if the checkouts are inside a cloud-synced folder. ZAP logs rejected keys and startup configuration, so refused checks never use a real key and the startup lines are suppressed by a logging override. Keep the ZAP key and database credentials private to the local services that require them.
 
 The ZAP client selects a fixed administration address, supplies its key in a request header, and bounds request duration and response size. Provider failures surface as structured errors. A dropped connection before an HTTP response can make credential rejection indistinguishable from an outage.
 
