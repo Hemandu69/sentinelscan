@@ -16,7 +16,7 @@ The separate "Stage 6 · Final Integration, Reliability & Submission Readiness" 
 
 ## Run storage migration
 
-Verified read-only on November 23: both migrations are recorded as finished, their checksums equal the committed files, and all columns, keys and checks match. The table holds two receipts saved during the November 23 run. Their fingerprint equals the one computed from the stopped ZAP container and its demo session, so the receipt and refresh SQL of that day worked against real PostgreSQL. Import has not run.
+Verified read-only on November 23: both migrations are recorded as finished, their checksums equal the committed files, and all columns, keys and checks match. The table holds two receipts saved during the November 23 run. Their fingerprint equals the one computed from the stopped ZAP container and its demo session, so the receipt and refresh SQL of that day worked against real PostgreSQL. The rolled-back storage suite, including a fixture import and its repetition, passed against real PostgreSQL on November 23 and left every row unchanged. No genuine import has run.
 
 That run's log shows a spider that completed, and an active scan with 51 rules completed, 1 skipped, 0 stopped and 24 alerts, without DOM XSS rules. It cannot be imported: its in-memory run list ended with the container and its log contains the API key. Its lifecycle lines, sanitized, are the evidence fixture. The November 22 run remains UNKNOWN.
 

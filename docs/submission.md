@@ -8,7 +8,7 @@ Watchtower lets an evaluator register a website, confirm permission for an exact
 
 **Known import blockers.** (1) ZAP 2.17.0's active scan source maps both a stopped and a finished scan to FINISHED. (2) Import requires each run to report its origin. The upstream spider listing source (add-on main branch) contains only id, progress and state. A reading of the 2.17.0 active scan source found id, progress, state and counts. Neither contains a URL. The installed bytecode confirms both. The approved [run evidence contract](run-evidence-design.md) addresses both with log, progress and message evidence. It is implemented and fixture-tested, and its migration is applied, but it is not yet verified live.
 
-**Coverage.** The ZAP Compose draft specifies a 3 GiB container limit, a 1.5 GiB JVM heap and concurrency options of two threads per host and one host per scan. Verify their effective runtime values separately. DOM XSS rule 40026 exclusion and a one-request-per-second limit are proposals. Record their readbacks for the actual demo session. If the exclusion is enabled, disclose that DOM-based XSS testing was excluded from that run.
+**Coverage.** Read back from the running container on 23 November: 3 GiB limit, 1.5 GiB heap, two threads per host, one host per scan, 20 ms delay, 52 active rules and no DOM XSS rule 40026. Disclose that DOM-based XSS testing is excluded. The passive limit of 10 alerts per rule is configured but takes effect only when ZAP is next recreated. No one-request-per-second limit is configured. Import covers active-scan alerts only; passive alerts carry no scan attribution.
 
 From the API checkout run `npm.cmd test`, `npm.cmd run typecheck` and `npm.cmd run lint`. From the web checkout run the same three commands and `npm.cmd run build`. Node 24 runs the API TypeScript entry point directly. Offline tests use fixture provider responses and transaction doubles. Database constraints and provider compatibility require the live checks below.
 
@@ -37,7 +37,7 @@ The inventory normalizer confirms RUNNING. FINISHED, a percentage of 100 and unr
 
 Use Windows PowerShell 5.1. Preserve the existing ZAP session while collecting its evidence. If Docker Desktop still reports HTTP 500, pause the session and preserve all containers and volumes. Run each command after its predecessor succeeds. For initial private environment setup follow [Local setup](local-setup.md).
 
-0. Rotate the exposed ZAP key first, following the infrastructure README.
+0. The exposed ZAP key was rotated on 23 November 2026. The new key is absent from logs, process arguments and the Java environment.
 
 1. In the infrastructure checkout verify the Linux engine, inspect existing services and run the authenticated version check. Capture the assessment state and run inventory before changing services or applying migrations.
 
