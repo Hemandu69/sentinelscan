@@ -14,5 +14,5 @@ Feature freeze since 24 November 2026. Only repairs, refinement and documentatio
 ## Remaining
 
 - One complete scan behind the firewall, started by the owner.
-- Dependency updates: Next.js 16.4.6, zod 4.6.7 and Fastify 5.12.8 first. Prisma 7 and Vitest 5 are major updates.
+- Dependency updates: Next.js 16.4.6, zod 4.6.7 and Fastify 5.12.8 are applied. Prisma 7 and Vitest 5 are major updates and remain, with smaller transitive ones.
 - The Windows permission of `reports` and `recovery` for another local group.
