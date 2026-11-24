@@ -13,10 +13,6 @@ Base origin: `http://127.0.0.1:4000`. Send JSON bodies for create requests. Appl
 | GET /api/v1/targets/:id | Reads one active target and issues an expiring confirmation for its exact URL. |
 | DELETE /api/v1/targets/:id | Archives the active target and returns 204. |
 | POST /api/v1/assessments | Records consent and creates a PENDING assessment. Returns 201 and the assessment record including its ID. |
-| GET /api/v1/integrations/zap/status | Reads availability and version. |
-| GET /api/v1/integrations/zap/version | Returns the authenticated provider version. |
-| GET /api/v1/integrations/zap/alerts | Returns normalized global alerts. Query parameters start and count default to 0 and 50; count is limited to 100. |
-| GET /api/v1/integrations/zap/progress/:kind/:scanId | Reads progress for an existing numeric scan ID. Supported kinds are spider and active. |
 
 ## Consent exchange
 
@@ -24,31 +20,29 @@ Read the target detail, show the returned URL and consent wording to the operato
 
 ## Provider contract
 
-The diagnostic CLI and HTTP discovery read the provider inventory. Global alerts cannot establish run attribution. Watchtower uses the following assessment-scoped suffixes under /api/v1/assessments/:id.
+Receipts are written by the scan service only. Watchtower uses these suffixes under /api/v1/assessments/:id.
 
 | Method and suffix | Input and result |
 |---|---|
 | GET /execution | Saved status and run rows for any assessment, without provider access, including kind, scan_id, state, progress and observed_at. |
-| POST /zap-association | kind, scanId, sessionKey, target, confirmedOperatorReceipt=true. Returns the saved row. |
 | POST /zap-sync | Empty object. Refreshes the saved observations and returns status and runs. |
 | POST /cancel-tracking | confirmed=true. Closes any open assessment locally, including archived and non-demo websites. Returns status and providerScanStopped=false. Never contacts ZAP. |
 | POST /zap-import | Empty object. Returns status and findingCount after verified import or idempotent replay. Missing evidence answers 409 with fixed `reasons` codes. Trustworthy stop or error evidence closes the assessment as CANCELLED or FAILED with a null findingCount. |
 
-The session fingerprint is not available over HTTP. The operator captures it with `npm.cmd run zap:session` in the API checkout while the run is in the current session. A receipt requires evidence captured during that session. The inventory alone has no trusted terminal cause. Import follows the [run evidence contract](run-evidence-design.md).
+The session fingerprint is not available over HTTP. The inventory alone has no trusted terminal cause. Import follows the [run evidence contract](run-evidence-design.md).
 
 ## Controlled scans
 
 | Method and path | Result |
 |---|---|
-| GET /api/v1/scans/policy | The fixed configuration |
-| GET /api/v1/targets/:id/eligibility | ELIGIBLE, VALIDATION_FAILED or UNAVAILABLE, with reason codes, validated addresses and safety limits. Authorizes nothing. |
-| GET /api/v1/targets/:id/readiness | Eligibility plus read-only scanner checks: ready and fixed reason codes |
+| GET /api/v1/scans/policy | The approved target and the fixed configuration |
+| GET /api/v1/scans/readiness | Read-only checks: ready and fixed reason codes |
 | POST /api/v1/scans | targetId, url, authorized=true, authorizationTextVersion, confirmationToken, configuration="standard", requestKey (UUID). Returns assessmentId. Repeating a requestKey never starts a second scan. 409 SCAN_NOT_READY carries reasons. |
 | GET /api/v1/assessments/:id/scan | Status, tracked, stage, reported progress, memory and stop state |
 | POST /api/v1/assessments/:id/scan/cancel | confirmed=true. Stops the scans through ZAP. 409 once results are being verified. |
 | GET /api/v1/assessments/:id/comparison?earlier=:id | new, persistent, changed and notSeenAgain for two completed assessments of one website. Not comparable without verified evidence for the same address, contract and rules. resolved is always empty. |
 
-While a controlled scan owns an assessment, the manual receipt, sync, import and cancel-tracking routes answer 409 SCAN_IN_PROGRESS.
+While a controlled scan owns an assessment, the sync, import and cancel-tracking routes answer 409 SCAN_IN_PROGRESS.
 
 ## Reports
 
@@ -61,21 +55,17 @@ While a controlled scan owns an assessment, the manual receipt, sync, import and
 
 The API renders Watchtower's report page with the installed Chrome or Edge, so Watchtower must be running. The browser may reach only this machine. The page counts as ready only after it has reconciled every finding, and the API compares its assessment and finding count with the database. Files live in `%LOCALAPPDATA%\SentinelScan\reports` under generated names; requests never contain a path. Every download is checked against its SHA-256.
 
-## Operator-controlled assessment records
+## Assessment records
 
 | Read endpoint | Contents |
 |---|---|
 | GET /api/v1/assessments | Newest assessments first. Optional targetId and offset. |
 | GET /api/v1/assessments/:id | Authorized URL snapshot, website, stored status and timestamps. startedAt is the first time an associated run was observed RUNNING. Finding count is null until completion. Completed assessments include a run evidence summary with any accepted exceptions. OUTCOME_UNKNOWN means that the scans ended without verified evidence. |
 | GET /api/v1/findings | Completed assessment findings. Optional assessmentId, severity, title search q and offset. |
-| GET /api/v1/integrations/zap/scans?kind=spider or kind=active | Runs visible on the fixed local provider, reported state, progress and origin if available. |
 
-Record lists return up to 25 items and a hasMore flag. Database and provider failures are errors. The provider endpoint and version identify the configured service address. They cannot distinguish session resets or reused scan IDs. A reported origin omits credentials, paths, query strings and fragments and cannot establish authorized path scope.
+Record lists return up to 25 items and a hasMore flag. Database and provider failures are errors.
 
-The API process can accept the exact demo address for **registration and consent records only** when started with SENTINELSCAN_DEMO_TARGET=juice-shop. The canonical address is http://juice-shop:3000/ including the trailing slash. The ordinary outbound destination policy remains in force.
-
-Use npm.cmd run inspect:zap and npm.cmd run test:zap:live in the API checkout for host-side read-only discovery. Use npm.cmd run test:database for the database fixture and read-back checks. A fresh assessment can be viewed in the Watchtower Assessments list. The previous interrupted active run has no verified terminal outcome. No association or final import can be accepted from its historical numeric ID. Durable association still requires run-specific evidence binding the authorized scope, successful outcome, and provider session. The read-only client can retrieve normalized records by attributed IDs; its output alone cannot finalize an assessment.
+The API process can accept the exact demo address for registration, consent and scans when started with SENTINELSCAN_DEMO_TARGET=juice-shop. The canonical address is http://juice-shop:3000/ including the trailing slash. The ordinary outbound destination policy remains in force.
 
 The findings list accepts sort=newest (default), oldest or title. Sorting is applied before pagination with the record ID as a stable tie-breaker. Finding details include the stored HTTP method and parameter when supplied.
 
-GET /api/v1/assessments/:id/zap-observations/:kind/:scanId reads a single provider observation for an authorized demo assessment. The assessment detail page permits selecting a listed run. It timestamps each observation, stops on unknown or terminal states, and permits stopping observation without changing the run. Transport errors trigger at most two delayed retries. An observation does not establish durable run ownership or authorize finalization.

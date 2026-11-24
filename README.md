@@ -1,17 +1,22 @@
 # SentinelScan
 
-SentinelScan is a local-first workspace for recording authorized web assessments and reviewing findings. This repository holds the architecture, cross-repository contracts, setup instructions, and project roadmap. Each application component has its own Git history and release lifecycle.
+SentinelScan is a college project: a local web application security assessment platform. It runs OWASP ZAP against the Juice Shop demo, verifies the evidence, explains the findings in plain language and creates PDF reports. One operator uses it on one Windows machine. There are no accounts and no cloud services.
 
-An evaluator should be able to trace a finding from a specific authorized website through the provider run to its stored result. The distinction between a pending assessment, an interrupted check and a completed assessment with zero findings matters throughout the dashboard and report.
+The distinction between a pending assessment, an interrupted one and a completed one with zero findings matters throughout.
 
-| Independent repository | Responsibility |
+| Repository | Responsibility |
 |---|---|
-| sentinelscan-web | Next.js Watchtower dashboard, website registry, assessment details and findings explorer |
-| sentinelscan-api | Fastify HTTP API, Prisma schema and migrations, PostgreSQL persistence, read-only ZAP integration |
-| sentinelscan-infrastructure | Local Docker Compose services for PostgreSQL, OWASP ZAP and Juice Shop |
+| sentinelscan-web | Watchtower: dashboard, website workspaces, AI Analysis, findings, reports |
+| sentinelscan-api | Fastify API, PostgreSQL persistence, ZAP control, evidence, reports |
+| sentinelscan-infrastructure | PostgreSQL, ZAP, Juice Shop and the outbound firewall |
 
-Roadmap stages 0–2 are accepted. Stage 3 has verified live provider reads and database transactions. Importing the results of a genuine operator-initiated run remains the next acceptance milestone.
-
-The assessment page can store operator run receipts, refresh observed progress and request a verified findings import. Import follows the approved run evidence contract, implemented offline. It was verified live on 24 November 2026 with one genuine Juice Shop assessment. The submission guide covers that gap, offline checks, evidence requirements and one final Windows integration session. [Submission and verification guide](docs/submission.md) · [Run evidence contract](docs/run-evidence-design.md) · [Finding intelligence](docs/finding-intelligence.md)
-
-[Architecture](ARCHITECTURE.md) · [Development guide](DEVELOPMENT.md) · [Roadmap and evidence](docs/development-roadmap.md) · [Local setup](docs/local-setup.md) · [API contract](docs/api-contract.md) · [Security model](docs/security-model.md)
+| Document | Content |
+|---|---|
+| [Local setup](docs/local-setup.md) | Install and start |
+| [Demonstration guide](docs/submission.md) | What to show, what is verified, what to disclose |
+| [Architecture](ARCHITECTURE.md) | Components, data and scan flow |
+| [API contract](docs/api-contract.md) | Routes |
+| [Security model](docs/security-model.md) | Boundaries and limits |
+| [Run evidence contract](docs/run-evidence-design.md) | When a scan counts as successful |
+| [Finding intelligence](docs/finding-intelligence.md) | Issues and optional AI |
+| [Roadmap](docs/development-roadmap.md) | Status and remaining work |

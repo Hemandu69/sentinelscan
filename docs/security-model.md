@@ -10,28 +10,15 @@ The ZAP client selects a fixed administration address, supplies its key in a req
 
 ## Target scope and consent
 
-Ordinary destination validation checks HTTP(S) syntax and resolved IPv4 and IPv6 addresses. It rejects embedded credentials, loopback, private and other prohibited addresses. Each assessment records consent for its target URL snapshot. Full validation happens when eligibility is shown, when consent is submitted and when a scan starts, which resolves DNS afresh each time. SentinelScan itself never connects to a registered website, so it has no target redirects to follow. ZAP makes its own connections. Scans started in Watchtower run behind the firewall described below. Scans run by hand are not restricted and are accepted for the demo only. Operator association with local demonstration results is a design requirement; it must preserve ordinary destination validation.
+Ordinary destination validation checks HTTP(S) syntax and resolved IPv4 and IPv6 addresses. It rejects embedded credentials, loopback, private and other prohibited addresses. Each assessment records consent for its target URL snapshot. Validation happens at registration and again when consent is submitted, which resolves DNS afresh each time. SentinelScan itself never connects to a registered website, so it has no target redirects to follow. ZAP makes its own connections, behind the firewall described below.
 
 Before import, verify that all results belong to the linked provider run and authorized scope. Treat stale IDs, mixed scope, incomplete reads and uncertain terminal outcomes as incomplete work. Explicit evidence of cancellation or failure must survive independently of the finding count.
 
 ## Controlled scans
 
-Scan control is a fixed list of server-side ZAP operations. The browser cannot supply a ZAP action, rule, exclusion, policy or address other than the registered one. Registration checks syntax only and authorizes nothing. A scan needs all of these:
+Scan control is a fixed list of server-side ZAP operations against `http://juice-shop:3000/`. The browser cannot supply a ZAP action, rule, policy or destination. A start needs a fresh single-use consent token (five minutes, bound to website and address), passing readiness checks and no other scan. It ends the previous ZAP session. The scan stops above 90% memory, on any other site in ZAP, on unhealthy services, on ZAP errors, at its time limit, or if the firewall is gone. A stop that ZAP does not confirm is recorded as an unknown outcome.
 
-| Step | Check |
-|---|---|
-| Eligibility | http(s), no credentials, canonical root address, public host name, every resolved IPv4 and IPv6 address public, firewall image present |
-| Consent | Fresh single-use token for the exact website and address, five minutes, wording version and time stored with the assessment |
-| Start | Address resolved and validated again. The firewall is applied and proven before ZAP is used. |
-| Before testing | Address validated again and firewall compared |
-| During | Firewall compared every 10 seconds; also memory, health, errors, time and any other site in ZAP |
-| End | Firewall compared before import, then every destination is locked |
-
-**Firewall.** `sentinelscan-egress-guard:1` joins ZAP's network namespace with NET_ADMIN only and installs kernel rules. ZAP can then open connections only to the validated IPv4 addresses on the one authorized port, plus replies from its own API port. Everything else is refused: private, loopback, link-local and metadata addresses, the database, the gateway, other ports, IPv6 and DNS. The host name is pinned in ZAP's hosts file, so later DNS answers have no effect. ZAP runs without the capability to change any of it. If the rules are missing, for example after a restart of ZAP, the scan is stopped.
-
-**Safety limits for public websites.** Addresses for sign-out, deletion and reset, payment and orders, administration, publishing and messages are excluded from both scans, and ZAP must confirm the exact list. Forms are not submitted during discovery. The demo keeps the settings that its evidence was verified with.
-
-**Limits.** Word lists cannot recognize every dangerous endpoint. A shared address, such as a content delivery network, also serves other websites; their names do not resolve in ZAP and their origins stop the scan, but a connection to that address is not blocked. The rules hold from a scan's start until ZAP restarts; after a restart ZAP is unrestricted until the next scan. A compromised Docker host can remove the rules. Attack traffic may also breach a hosting provider's terms, which the operator must check.
+**Firewall.** `sentinelscan-egress-guard:1` joins ZAP's network namespace with NET_ADMIN only and installs kernel rules. ZAP can open connections only to the demo container on port 3000, plus replies from its own API port. Everything else is refused: private, loopback, link-local and metadata addresses, the database, the gateway, the internet, other ports and DNS. The name is pinned in ZAP's hosts file. ZAP runs without the capability to change any of it. The rules are proven before each scan, compared every 10 seconds and before import, and locked afterwards. A ZAP restart removes them until the next scan. Someone who controls Docker on this machine can remove them.
 
 ## Optional AI analysis
 

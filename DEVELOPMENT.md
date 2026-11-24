@@ -1,32 +1,11 @@
 # Development
 
-Keep the documentation checkout beside the component checkouts. Work on code, migrations, dependencies and service configuration in their owning repositories. This checkout has no application build or runtime dependencies.
+Keep the four checkouts beside each other. Change code, migrations and configuration in their own repository, and update the documents here when a shared interface changes. State what ran, and whether provider, database and input were real or fixtures.
 
-When a component changes a shared interface, update the [API contract](docs/api-contract.md) and the [architecture](ARCHITECTURE.md) here. Record verification in the [roadmap](docs/development-roadmap.md), including what ran, whether the provider and database were real, and whether the input was a fixture.
+| Checkout | Checks |
+|---|---|
+| API | `npm.cmd test`, `npm.cmd run typecheck`, `npm.cmd run lint` |
+| Web | the same, `npm.cmd run build`, and the fixture browser scripts in `tests/browser` |
+| Infrastructure | `node --test *.test.cjs`, `docker --context desktop-linux compose config --quiet` |
 
-## Verify the backend
-
-From the API checkout in Windows PowerShell, run the offline suite and static checks:
-
-```powershell
-npm.cmd test
-npm.cmd run typecheck
-npm.cmd run lint
-```
-
-With the local services healthy and the database migrated, run each live suite separately:
-
-```powershell
-npm.cmd run test:database
-npm.cmd run test:zap:live
-npm.cmd run test:dashboard:live
-npm.cmd run test:run-storage
-```
-
-The database suite uses synthetic findings against real PostgreSQL. The run-storage suite executes the receipt SQL with fixture provider data and rolls back. The ZAP suite reads a version, an alert page and both run lists. A passing result for either suite covers only that boundary. Genuine import acceptance also requires independent database verification of a specific operator run.
-
-## Review documentation changes
-
-From the web checkout run `npm.cmd test`, `npm.cmd run typecheck`, `npm.cmd run lint` and `npm.cmd run build`. The fixture browser scripts in `tests/browser` need an existing Playwright core package and Chrome, supplied as arguments. They never contact the API, database or ZAP. A real Windows print-dialog check is a separate acceptance step. From infrastructure run `docker --context desktop-linux compose config --quiet` and `node --test verify-zap.test.cjs observe-zap-resources.test.cjs safety.test.cjs access.test.cjs`. The infrastructure and documentation checkouts have no npm test script.
-
-Resolve relative links from the file containing them. Compare routes and payloads to the API source, port bindings to Compose, and milestone claims to observed results. Stage only documentation and ignore rules. Inspect the staged diff before committing.
+The API's live suites `test:database`, `test:run-storage`, `test:dashboard:live` and `test:zap:live` need healthy local services and are run one at a time. They use fixture findings, clean up or roll back, and start no scan.

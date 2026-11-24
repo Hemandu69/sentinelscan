@@ -11,7 +11,7 @@ Exactly two, fixed in `src/integrations/zap/exceptions.ts`. They are not configu
 | 90034 Cloud Metadata | Forges the Host header of requests to the target | Every request address is on the authorized origin; exactly 13 differing messages; `scanProgress` and the log each count 13; each value is one of six fixed values; each request falls inside the rule's logged start and end |
 | 20015 Heartbleed | Raw-socket probes without a stored message | Reported requests exceed stored messages by exactly 3; `scanProgress` and the log each count 3; the rule completed |
 
-Both also need one scan host equal to the authorized origin, an undisturbed log, and equal request totals over all rules in `scanProgress` and the log. The counts depend on the target and the installed rules. A different target, add-on version or policy may produce other counts, and is then refused. A public website can therefore end as OUTCOME_UNKNOWN although its scan ran normally. That is intended; the contract is not relaxed for it.
+Both also need one scan host equal to the authorized origin, an undisturbed log, and equal request totals over all rules in `scanProgress` and the log. The counts depend on the target and the installed rules. A different target, add-on version or policy may produce other counts, and is then refused.
 
 Limits: a Host header does not show where a connection went, and neither does a response body. The raw probes have no record of their own; only the scan host and the rule's counts support their destination.
 
@@ -78,12 +78,6 @@ The digest detects accidental change. It does not protect against someone with d
 
 Verified live: the `scanProgress` shape and its agreement with the log, retained temporary messages, and `reqCount` as stored messages plus raw probes. Not verified: whether reaching the spider's maximum duration also logs `complete: true` (no maximum is configured).
 
-## Operator rules for an importable run
+## Operation
 
-A controlled scan started in Watchtower applies these rules itself. They remain necessary for scans run by hand.
-
-1. Use a container whose log does not contain the API key (after rotation with `zap-log4j2.properties`).
-2. Create a new named ZAP session first. Run exactly one spider, then one active scan.
-3. Save each receipt after that run starts and while the container is untouched.
-4. Do not stop, pause past a limit or restart anything. Do not start another scan in that session.
-5. Rehearse with `npm.cmd run inspect:zap -- --evidence <spider id> <active id>`. It reads only and prints facts and missing evidence, without checking receipts.
+The scan service follows these rules itself: a container whose log does not contain the key, a new named session, exactly one spider and then one active scan, receipts saved while they run, and nothing else in that session. `npm.cmd run inspect:zap -- --evidence <spider id> <active id>` rehearses the evidence read-only.

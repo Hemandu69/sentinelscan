@@ -8,9 +8,9 @@ For a fresh checkout, create each component’s private .env from its own .env.e
 
 The API reads ZAP_API_KEY from its process environment or the sibling infrastructure .env. Its ZAP administration address is fixed. Keep private configuration out of this repository.
 
-## Start services in the approved integration window
+## Start services
 
-For the existing installation, preserve recovery evidence and use the [submission sequence](submission.md) before changing service lifetimes. The following startup command reuses existing containers. Applying a reviewed image or resource change to ZAP requires a separate deployment decision.
+Build the firewall image once, see the infrastructure README. The following startup command reuses existing containers. Applying a reviewed image or resource change to ZAP requires a separate deployment decision.
 
 ```powershell
 Set-Location -LiteralPath '.\sentinelscan-infrastructure'
@@ -22,11 +22,9 @@ node .\verify-zap.cjs
 
 The `--no-recreate` flag matters: plain `up` can replace a container whose configuration changed and discard the ZAP session. Expect Linux engine access, healthy services and host bindings on 127.0.0.1. The verifier prints the version and checks rejection of absent and incorrect keys. Resolve any failure before continuing.
 
-For an existing installation, follow the [backup and migration steps](submission.md) before applying the run-storage migration. Preserve the current provider session while collecting evidence.
-
 ## Prepare and run the API
 
-For a fresh installation use the commands below. On the existing workspace, use the backup-verified migration procedure in the submission guide before starting a version of the API that reads assessment_runs. To opt into the exact Juice Shop scope, set `SENTINELSCAN_DEMO_TARGET=juice-shop` in the API `.env`.
+For a fresh installation use the commands below. An existing database is migrated only with `verify-and-migrate.ps1`. To opt into the exact Juice Shop scope, set `SENTINELSCAN_DEMO_TARGET=juice-shop` in the API `.env`.
 
 ```powershell
 Set-Location -LiteralPath '..\sentinelscan-api'
