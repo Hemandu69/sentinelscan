@@ -40,8 +40,9 @@ The session fingerprint is not available over HTTP. The operator captures it wit
 
 | Method and path | Result |
 |---|---|
-| GET /api/v1/scans/policy | Approved targets and the fixed configuration |
-| GET /api/v1/scans/readiness | Read-only checks: ready and fixed reason codes |
+| GET /api/v1/scans/policy | The fixed configuration |
+| GET /api/v1/targets/:id/eligibility | ELIGIBLE, VALIDATION_FAILED or UNAVAILABLE, with reason codes, validated addresses and safety limits. Authorizes nothing. |
+| GET /api/v1/targets/:id/readiness | Eligibility plus read-only scanner checks: ready and fixed reason codes |
 | POST /api/v1/scans | targetId, url, authorized=true, authorizationTextVersion, confirmationToken, configuration="standard", requestKey (UUID). Returns assessmentId. Repeating a requestKey never starts a second scan. 409 SCAN_NOT_READY carries reasons. |
 | GET /api/v1/assessments/:id/scan | Status, tracked, stage, reported progress, memory and stop state |
 | POST /api/v1/assessments/:id/scan/cancel | confirmed=true. Stops the scans through ZAP. 409 once results are being verified. |

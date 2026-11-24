@@ -11,7 +11,7 @@ Exactly two, fixed in `src/integrations/zap/exceptions.ts`. They are not configu
 | 90034 Cloud Metadata | Forges the Host header of requests to the target | Every request address is on the authorized origin; exactly 13 differing messages; `scanProgress` and the log each count 13; each value is one of six fixed values; each request falls inside the rule's logged start and end |
 | 20015 Heartbleed | Raw-socket probes without a stored message | Reported requests exceed stored messages by exactly 3; `scanProgress` and the log each count 3; the rule completed |
 
-Both also need one scan host equal to the authorized origin, an undisturbed log, and equal request totals over all rules in `scanProgress` and the log. The counts depend on the target and the installed rules. A different target, add-on version or policy may produce other counts, and is then refused.
+Both also need one scan host equal to the authorized origin, an undisturbed log, and equal request totals over all rules in `scanProgress` and the log. The counts depend on the target and the installed rules. A different target, add-on version or policy may produce other counts, and is then refused. A public website can therefore end as OUTCOME_UNKNOWN although its scan ran normally. That is intended; the contract is not relaxed for it.
 
 Limits: a Host header does not show where a connection went, and neither does a response body. The raw probes have no record of their own; only the scan host and the rule's counts support their destination.
 

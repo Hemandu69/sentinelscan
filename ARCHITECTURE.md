@@ -24,7 +24,7 @@ One Windows host runs a shared workspace. The Next.js Watchtower frontend commun
 
 ## Controlled scans
 
-Watchtower can start a scan of an approved target. The API checks readiness, records consent, starts a fresh ZAP session, runs the spider and the active scan, watches health, memory, scope and errors, and then uses the same evidence contract and import as an operator run. Only `http://juice-shop:3000/` and one fixed configuration are approved. The browser sends no scanner policy or address beyond the consented one. Progress is held in memory. After an API restart a running scan is no longer followed and needs an outcome check. This path is verified with fixtures; no live scan has been launched through it yet.
+Watchtower can start a scan of any registered website that passes validation. The API checks readiness, records consent, applies and proves the outbound firewall, starts a fresh ZAP session, runs the spider and the active scan, watches health, memory, scope and errors, and then uses the same evidence contract and import as an operator run. One fixed configuration exists. Juice Shop stays available as the local demo. The browser sends no scanner policy or address beyond the consented one. Progress is held in memory. After an API restart a running scan is no longer followed and needs an outcome check. The firewall is verified on real containers. A public website has not been scanned yet.
 
 ## Operator-run design
 
