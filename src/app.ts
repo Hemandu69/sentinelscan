@@ -2,6 +2,12 @@ import { configuredZapClient } from "./integrations/zap/client.ts";
 import { registerZap } from "./integrations/zap/routes.ts";
 import { configuredAi } from "./integrations/ai/provider.ts";
 import { registerIssues } from "./modules/issues/routes.ts";
+import { browserRenderer } from "./modules/reports/render.ts";
+import { registerReports } from "./modules/reports/routes.ts";
+import {
+  defaultReportDirectory,
+  reportStorage,
+} from "./modules/reports/storage.ts";
 import { registerDashboard } from "./modules/dashboard/routes.ts";
 import Fastify from "fastify";
 import { PrismaClient, Prisma } from "@prisma/client";
@@ -88,6 +94,12 @@ export function buildApp(
   registerAssessments(app, db, consent, resolve);
   registerRecords(app, db);
   registerIssues(app, db, ai);
+  registerReports(
+    app,
+    db,
+    reportStorage(defaultReportDirectory()),
+    browserRenderer(settings.WEB_ORIGIN),
+  );
   registerRunRecords(app, db, zap);
   registerObservation(app, db, zap);
   return app;

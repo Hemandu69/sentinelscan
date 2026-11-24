@@ -20,6 +20,10 @@ Copy `.env.example` to `.env` on a fresh checkout and keep it private. Preserve 
 
 `test:database` creates and deletes its own fixture rows. `test:run-storage` rolls its transactions back.
 
+## Reports
+
+PDF files are rendered from Watchtower's report page with Chrome or Edge and stored in `%LOCALAPPDATA%\SentinelScan\reports`. `npm.cmd run report:adopt -- <assessment id> <pdf> <sha256>` records a PDF that was printed earlier; it copies the file and leaves the original unchanged.
+
 ## Optional AI analysis
 
 Disabled unless `SENTINELSCAN_AI_PROVIDER=anthropic` and `ANTHROPIC_API_KEY` are set in `.env`. Calls are billed by the provider. Tests never contact it. See the documentation repository's `docs/finding-intelligence.md`.
