@@ -1,0 +1,117 @@
+generator client {
+ provider = "prisma-client-js"
+}
+datasource db {
+ provider = "postgresql"
+ url = env("DATABASE_URL")
+}
+model Target {
+ id String @id @default(uuid()) @db.Uuid
+ displayName String @map("display_name")
+ canonicalUrl String @map("canonical_url")
+ createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+ archivedAt DateTime? @map("archived_at") @db.Timestamptz(3)
+ assessments Assessment[]
+ @@map("targets")
+}
+model Assessment {
+ id String @id @default(uuid()) @db.Uuid
+ targetId String @map("target_id") @db.Uuid
+ target Target @relation(fields:[targetId],references:[id],onDelete:Restrict)
+ targetUrlSnapshot String @map("target_url_snapshot")
+ authorizationConfirmedAt DateTime @map("authorization_confirmed_at") @db.Timestamptz(3)
+ authorizationTextVersion String @map("authorization_text_version")
+ source String
+ status String
+ requestedAt DateTime @default(now()) @map("requested_at") @db.Timestamptz(3)
+ startedAt DateTime? @map("started_at") @db.Timestamptz(3)
+ finishedAt DateTime? @map("finished_at") @db.Timestamptz(3)
+ errorCode String? @map("error_code")
+ findings Finding[]
+ runs AssessmentRun[]
+ reports Report[]
+ @@index([targetId,requestedAt])
+ @@map("assessments")
+}
+model Finding {
+ id String @id @default(uuid()) @db.Uuid
+ assessmentId String @map("assessment_id") @db.Uuid
+ assessment Assessment @relation(fields:[assessmentId],references:[id],onDelete:Restrict)
+ fingerprint String
+ sourceRuleId String? @map("source_rule_id")
+ name String
+ sourceSeverity String @map("source_severity")
+ normalizedSeverity String @map("normalized_severity")
+ confidence String
+ url String
+ method String?
+ parameter String?
+ redactedEvidence String? @map("redacted_evidence")
+ description String
+ remediation String?
+ references String[] @default([])
+ cweId Int? @map("cwe_id")
+ wascId Int? @map("wasc_id")
+ firstObservedAt DateTime @default(now()) @map("first_observed_at") @db.Timestamptz(3)
+ analysis FindingAnalysis?
+ @@unique([assessmentId,fingerprint])
+ @@index([assessmentId,normalizedSeverity])
+ @@map("findings")
+}
+model Report {
+ id String @id @default(uuid()) @db.Uuid
+ assessmentId String @map("assessment_id") @db.Uuid
+ assessment Assessment @relation(fields:[assessmentId],references:[id],onDelete:Restrict)
+ generatedAt DateTime @default(now()) @map("generated_at") @db.Timestamptz(3)
+ format String
+ templateVersion String @map("template_version")
+ contentDigest String @map("content_digest")
+ storageKey String @unique @map("storage_key")
+ @@index([assessmentId,generatedAt])
+ @@map("reports")
+}
+
+model AssessmentRun {
+ assessmentId String @db.Uuid @map("assessment_id")
+ assessment Assessment @relation(fields:[assessmentId],references:[id],onDelete:Restrict)
+ kind String
+ sessionKey String @map("session_key")
+ scanId String @map("scan_id")
+ state String?
+ progress Int?
+ associatedAt DateTime @default(now()) @map("associated_at") @db.Timestamptz(3)
+ observedAt DateTime @map("observed_at") @db.Timestamptz(3)
+ @@id([assessmentId,kind])
+ evidence RunEvidence?
+ @@unique([sessionKey,kind,scanId])
+ @@map("assessment_runs")
+}
+
+model RunEvidence {
+ assessmentId String @db.Uuid @map("assessment_id")
+ kind String
+ run AssessmentRun @relation(fields:[assessmentId,kind],references:[assessmentId,kind],onDelete:Restrict)
+ contractVersion Int @map("contract_version")
+ sessionKey String @map("session_key")
+ outcome String
+ reasons String[]
+ facts Json
+ factsDigest String @map("facts_digest")
+ collectedAt DateTime @default(now()) @map("collected_at") @db.Timestamptz(3)
+ @@id([assessmentId,kind])
+ @@map("run_evidence")
+}
+
+model FindingAnalysis {
+ findingId String @id @db.Uuid @map("finding_id")
+ finding Finding @relation(fields:[findingId],references:[id],onDelete:Restrict)
+ status String
+ inputDigest String @map("input_digest")
+ promptVersion String @map("prompt_version")
+ provider String
+ model String
+ result Json?
+ errorCode String? @map("error_code")
+ analysedAt DateTime @default(now()) @map("analysed_at") @db.Timestamptz(3)
+ @@map("finding_analyses")
+}
