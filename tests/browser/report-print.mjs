@@ -34,6 +34,21 @@ try {
   page.setDefaultTimeout(10000);
   page.on("pageerror", (e) => console.error(e.message));
   let fail = false;
+  const findingId = randomUUID();
+  const issues = {
+    counts: { originalAlerts: 24, findings: 1, issues: 1, endpoints: 1 },
+    severities: { LOW: 1 },
+    coverage: { analysed: 0, unanalysed: 1 },
+    issues: [
+      {
+        key: "a".repeat(64), assessmentId: id, website: "Print fixture", guide: null,
+        scanner: { title: "<script>fixture()</script>", ruleId: "1", severity: "LOW", sourceSeverity: "Low", confidence: "HIGH", method: "GET", parameter: null, evidence: null, description: "Fixture only", remediation: "Long remediation text. ".repeat(1400) + "End of remediation.", references: [], cweId: null, wascId: null },
+        findings: [{ id: findingId, url: "http://fixture.invalid/" + "a".repeat(1600), firstObservedAt: now }],
+        endpoints: ["http://fixture.invalid/" + "a".repeat(1600)],
+        analysis: { status: "NONE", errorCode: null, provider: null, model: null, analysedAt: null, result: null },
+      },
+    ],
+  };
   await page.route("**/*", (route) => {
     const url = new URL(route.request().url());
     if (url.pathname === "/print-fixture")
@@ -42,7 +57,7 @@ try {
         body: '<div id="root"></div>',
       });
     if (url.origin !== "http://127.0.0.1:4000") return route.abort();
-    const body = url.pathname.endsWith(id)
+    const body = url.pathname === "/api/v1/issues" ? issues : url.pathname.endsWith(id)
       ? {
           id,
           website: "Print fixture",
@@ -57,7 +72,7 @@ try {
       : {
           items: [
             {
-              id: randomUUID(),
+              id: findingId,
               assessmentId: id,
               website: "Print fixture",
               name: "<script>fixture()</script>",

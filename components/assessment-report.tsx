@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { describeError } from "../lib/api";
+import { explain, originLabel, priorityName, severityName } from "../lib/issues";
 import { loadReport } from "../lib/report";
+import { IssueCounts, SummaryText } from "./issues";
 import "./assessment-report.css";
 
 const time = (value: string) =>
@@ -100,6 +102,14 @@ export function AssessmentReport({ id }: { id: string }) {
               </div>
             ))}
           </dl>
+          <section aria-labelledby="executive">
+            <h2 id="executive">Executive summary</h2>
+            <SummaryText
+              data={report.issues}
+              evidence={report.assessment.evidence}
+            />
+            <IssueCounts data={report.issues} />
+          </section>
           {report.assessment.evidence ? (
             <section aria-labelledby="evidence">
               <h2 id="evidence">Verified run evidence</h2>
@@ -192,29 +202,104 @@ export function AssessmentReport({ id }: { id: string }) {
               </li>
             </ul>
           </section>
-          {report.items.map((row) => (
-            <article key={row.id}>
-              <h3>{row.name}</h3>
-              <p>
-                {row.normalizedSeverity} · {row.confidence} confidence
-              </p>
-              <p>
-                {row.method} {row.url}
-                {row.parameter && <> · Parameter {row.parameter}</>}
-              </p>
-              <p>{row.description}</p>
-              <h4>Recommended fix</h4>
-              <p>
-                {row.remediation || "The provider supplied no remediation."}
-              </p>
-              {(row.cweId !== null || row.wascId !== null) && (
+          <section aria-labelledby="issues">
+            <h2 id="issues">Issues</h2>
+            <p>
+              {report.issues.coverage.analysed} of {report.issues.counts.issues}{" "}
+              {report.issues.counts.issues === 1 ? "issue has" : "issues have"} an
+              AI interpretation. AI text is marked, may be wrong, and never changes
+              scanner severity, confidence or evidence. Without it, explanations
+              come from SentinelScan&apos;s guide or the scanner.
+            </p>
+            {report.issues.issues.length === 0 && <p>No findings were recorded.</p>}
+          </section>
+          {report.issues.issues.map((row) => {
+            const text = explain(row);
+            const ai = row.analysis.result;
+            return (
+              <article key={row.key}>
+                <h3>{text.title}</h3>
                 <p>
-                  {row.cweId !== null && "CWE-" + row.cweId}{" "}
-                  {row.wascId !== null && "WASC-" + row.wascId}
+                  Scanner severity {severityName(row.scanner.severity)} ·{" "}
+                  {row.scanner.confidence} confidence
+                  {ai &&
+                    " · AI priority " +
+                      priorityName(ai.practicalPriority) +
+                      " (opinion)"}
                 </p>
-              )}
-            </article>
-          ))}
+                <p>{text.summary}</p>
+                <h4>What happened · {originLabel[text.origin]}</h4>
+                <p>{text.what}</p>
+                {text.why && (
+                  <>
+                    <h4>Why it matters · {originLabel[text.origin]}</h4>
+                    <p>{text.why}</p>
+                  </>
+                )}
+                <h4>Affected locations · Scanner record</h4>
+                <ul>
+                  {row.endpoints.map((url) => (
+                    <li key={url}>
+                      {row.scanner.method} {url}
+                    </li>
+                  ))}
+                </ul>
+                <h4>Recommended fix</h4>
+                {ai && ai.remediation.length > 0 && (
+                  <>
+                    <p>AI interpretation:</p>
+                    <ul>
+                      {ai.remediation.map((step) => (
+                        <li key={step}>{step}</li>
+                      ))}
+                    </ul>
+                  </>
+                )}
+                <p>
+                  {row.scanner.remediation ||
+                    "The provider supplied no remediation."}
+                </p>
+                <p>Next: {text.action}</p>
+                {text.verify.length > 0 && (
+                  <>
+                    <h4>How to verify · {originLabel[text.origin]}</h4>
+                    <ul>
+                      {text.verify.map((step) => (
+                        <li key={step}>{step}</li>
+                      ))}
+                    </ul>
+                  </>
+                )}
+                <h4>Technical evidence · Scanner record</h4>
+                <p>
+                  {row.scanner.title}
+                  {row.scanner.ruleId && " · Rule " + row.scanner.ruleId}
+                  {row.scanner.parameter && " · " + row.scanner.parameter}
+                  {row.scanner.cweId && " · CWE-" + row.scanner.cweId}
+                  {row.scanner.wascId && " · WASC-" + row.scanner.wascId}
+                </p>
+                <p>{row.scanner.description}</p>
+                <p>{row.scanner.evidence ?? "No evidence text was supplied."}</p>
+                {row.scanner.references.map((url) => (
+                  <p key={url}>{url}</p>
+                ))}
+                <p>
+                  Findings: {row.findings.map((f) => f.id).join(", ")}
+                </p>
+                {ai && (
+                  <>
+                    <h4>Limitations · AI interpretation</h4>
+                    <p>{ai.falsePositiveNotes}</p>
+                    <p>{ai.limitations}</p>
+                    <p>
+                      {row.analysis.provider} {row.analysis.model},{" "}
+                      {row.analysis.analysedAt && time(row.analysis.analysedAt)}
+                    </p>
+                  </>
+                )}
+              </article>
+            );
+          })}
         </>
       )}
     </main>

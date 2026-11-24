@@ -33,6 +33,9 @@ function reset(change = {}) {
     findings: 0,
     fail: {}, // path suffix -> [status, code] or "abort"
     hold: null,
+    ai: false,
+    analysed: false,
+    guide: false,
     posts: [],
     ...change,
   });
@@ -52,6 +55,26 @@ const summary = () => ({
       : null,
   findingCount: state.status === "COMPLETED" ? state.findings : null,
 });
+const second = "29cf23db-3901-4c11-be04-cd6b499db65f";
+function issues() {
+  const n = state.status === "COMPLETED" ? state.findings : 0;
+  const ids = [findingId, second].slice(0, n);
+  const url = (i) => demo + (n === 1 ? "a".repeat(300) : ["assets", "assets/public"][i]);
+  const result = state.analysed
+    ? { plainTitle: "AI title for different browsers", summary: "AI summary.", whatHappened: "AI what happened.", whyItMatters: "AI why.", technicalExplanation: "AI technical.", potentialImpact: "AI impact.", practicalPriority: "NO_ACTION", priorityReason: "AI reason.", recommendedAction: "AI action.", remediation: [], verificationSteps: ["AI verify."], falsePositiveNotes: "AI notes.", limitations: "AI limits. <img src=x onerror=alert(1)>", evidenceSufficient: false, exampleCode: null }
+    : null;
+  const list = n
+    ? [{
+        key: "a".repeat(64), assessmentId: id, website: "Fixture",
+        scanner: { title: "Fixture finding", ruleId: "10104", severity: "LOW", sourceSeverity: "Low", confidence: "Low", method: "GET", parameter: "q", evidence: null, description: "Fixture only. Second sentence.", remediation: null, references: ["https://owasp.org/"], cweId: 79, wascId: null },
+        guide: state.guide ? { plainTitle: "Guide title", summary: "Guide summary.", whatHappened: "Guide what.", whyItMatters: "Guide why.", nextAction: "Guide action.", verify: ["Guide verify."] } : null,
+        findings: ids.map((value, i) => ({ id: value, url: url(i), firstObservedAt: now })),
+        endpoints: ids.map((_, i) => url(i)),
+        analysis: { status: result ? "COMPLETED" : "NONE", errorCode: null, provider: result ? "anthropic" : null, model: result ? "claude-opus-5-5" : null, analysedAt: result ? now : null, result },
+      }]
+    : [];
+  return { counts: { originalAlerts: n ? 24 : 0, findings: n, issues: list.length, endpoints: n }, severities: { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: list.length, INFO: 0, OTHER: 0 }, coverage: { analysed: result ? list.length : 0, unanalysed: result ? 0 : list.length }, issues: list };
+}
 function reply(method, url, body) {
   const p = url.pathname;
   if (p === "/health" || p === "/health/database") return { status: "ok" };
@@ -108,6 +131,13 @@ function reply(method, url, body) {
       })),
       hasMore: false,
     };
+  if (p === "/api/v1/analysis/status")
+    return { enabled: Boolean(state.ai), reason: state.ai ? null : "AI_DISABLED", provider: state.ai ? "anthropic" : null, model: state.ai ? "claude-opus-5-5" : null, storageReady: true };
+  if (p === "/api/v1/issues") return issues();
+  if (p.endsWith("/analysis")) {
+    state.analysed = true;
+    return issues().issues[0];
+  }
   if (p === "/api/v1/integrations/zap/scans")
     return { provider: { endpoint: "http://127.0.0.1:8090", version: "2.17.0" }, runs: [{ id: "0", state: "FINISHED", progress: 100, reportedOrigin: null }] };
   throw Error("No fixture for " + method + " " + p);
@@ -240,7 +270,7 @@ try {
       if (url === "/") await page.getByText("The website register could not be loaded.").waitFor();
       else await page.getByRole("alert").filter({ hasText: /Could not reach the local API/ }).first().waitFor();
       const text = await page.locator("main").innerText();
-      assert.doesNotMatch(text, /\b0 recorded|Your website register is empty|No imported findings|No security checks/);
+      assert.doesNotMatch(text, /\b0 recorded|Your website register is empty|No imported findings|No security checks|Only informational/);
     });
   await check("loading state precedes data", {}, async (page) => {
     let release;
@@ -254,7 +284,7 @@ try {
     await page.goto(web + "/");
     await page.getByText("Your website register is empty.").waitFor();
     await page.goto(web + "/findings");
-    await page.getByText("No imported findings match this view.").waitFor();
+    await page.getByText("No imported findings yet.").waitFor();
   });
   await check("a check without completion shows unknown results, completed zero shows zero", {}, async (page) => {
     await page.goto(web + "/assessments/" + id);
@@ -344,6 +374,74 @@ try {
       assert.doesNotMatch(await page.locator("main").innerText(), /ACTIVE_SCAN_RUNNING|COMPLETED ·/);
     }
     await page.getByRole("button", { name: "Cancel local tracking" }).waitFor();
+  });
+  await check("two records show as one issue with two locations and clear origins", { state: { status: "COMPLETED", findings: 2, guide: true } }, async (page) => {
+    await page.goto(web + "/findings");
+    await page.getByRole("heading", { name: "Guide title" }).waitFor();
+    const text = async () => (await page.locator("main").innerText()).replace(/\s+/g, " ");
+    assert.match(await text(), /Original alerts 24 Imported findings 2 Issues 1 Affected locations 2/);
+    assert.match(await text(), /2 affected locations · Not AI analysed/);
+    assert.match(await text(), /AI analysis is not configured/);
+    assert.equal(await page.getByRole("button", { name: /Analyse/ }).count(), 0);
+    assert.equal(await page.getByText("Original alert", { exact: true }).isVisible(), false);
+    await page.getByText("Read the explanation").click();
+    await page.getByText("SentinelScan guide").first().waitFor();
+    assert.equal(await page.getByText("AI interpretation", { exact: true }).count(), 0);
+    await page.getByText("Technical evidence").click();
+    assert.match(await text(), /Original alert Fixture finding Scanner severity Low/);
+    assert.match(await text(), new RegExp(findingId + ".*" + second));
+    assert.deepEqual(await audit(page), []);
+  });
+  await check("AI analysis runs once, is labelled and never replaces scanner facts", { state: { status: "COMPLETED", findings: 2, ai: true } }, async (page) => {
+    await page.goto(web + "/findings");
+    await page.getByText(/sends the sanitized alert/).waitFor();
+    await page.getByRole("button", { name: "Analyse with AI" }).click();
+    await page.getByRole("heading", { name: "AI title for different browsers" }).waitFor();
+    assert.equal(state.posts.length, 1);
+    assert.deepEqual(state.posts[0][1], {});
+    assert.equal(await page.getByRole("button", { name: /Analyse/ }).count(), 0);
+    await page.getByText("Read the explanation").click();
+    await page.getByText("This is an opinion, not the scanner's severity.").waitFor();
+    await page.getByText("Technical evidence").click();
+    const text = (await page.locator("main").innerText()).replace(/\s+/g, " ");
+    assert.match(text, /The scanner rates this Low with Low confidence/);
+    assert.match(text, /Original alert Fixture finding Scanner severity Low/);
+    assert.equal(await page.locator("main img").count(), 0);
+    assert.deepEqual(await audit(page), []);
+  });
+  await check("a failed analysis leaves the issue readable", { state: { status: "COMPLETED", findings: 2, ai: true, guide: true, fail: { "/analysis": [429, "AI_RATE_LIMITED"] } } }, async (page) => {
+    await page.goto(web + "/findings");
+    await page.getByRole("button", { name: "Analyse with AI" }).click();
+    await page.getByRole("alert").filter({ hasText: "limiting requests" }).waitFor();
+    await page.getByRole("heading", { name: "Guide title" }).waitFor();
+  });
+  await check("issue search and severity filters", { state: { status: "COMPLETED", findings: 2 } }, async (page) => {
+    await page.goto(web + "/findings");
+    await page.getByRole("heading", { name: "Fixture finding" }).waitFor();
+    await page.getByLabel("Search issues").fill("public");
+    await page.getByRole("heading", { name: "Fixture finding" }).waitFor();
+    await page.getByRole("combobox").selectOption("HIGH");
+    await page.getByText("No issues match this view.").waitFor();
+  });
+  await check("assessment summary explains results without a score", { state: { status: "COMPLETED", findings: 2, guide: true } }, async (page) => {
+    await page.goto(web + "/assessments/" + id);
+    await page.getByText("1 issue needs attention.").waitFor();
+    const text = (await page.locator(".assessment-summary").innerText()).replace(/\s+/g, " ");
+    assert.match(text, /does not show that the website is secure/);
+    assert.match(text, /40026/);
+    assert.match(text, /not full OWASP coverage/);
+    assert.doesNotMatch(text, /score|grade|\d+\s*%/i);
+  });
+  await check("report with AI marks its text", { state: { status: "COMPLETED", findings: 1, analysed: true } }, async (page) => {
+    await page.goto(web + "/assessments/" + id + "/report");
+    await page.getByText("What happened · AI interpretation").waitFor();
+    await page.getByText("AI text is marked, may be wrong").waitFor();
+    assert.match(await page.locator("main").innerText(), /Scanner severity Low · Low confidence · AI priority No action expected \(opinion\)/);
+  });
+  await check("report without AI stays complete and unmarked", { state: { status: "COMPLETED", findings: 1 } }, async (page) => {
+    await page.goto(web + "/assessments/" + id + "/report");
+    await page.getByText("0 of 1 issue has an AI interpretation").waitFor();
+    assert.doesNotMatch(await page.locator("article").innerText(), /AI interpretation/);
   });
   await check("cancellation is confirmed and described as local", {}, async (page) => {
     const prompts = [];

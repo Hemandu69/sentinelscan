@@ -6,11 +6,11 @@ import { describeError, request } from "../lib/api";
 import {
   detailFor,
   assessments,
-  findings,
   scans,
   statusLabel,
 } from "../lib/records";
 import { Navigation } from "./navigation";
+import { AssessmentSummary, IssuesView } from "./issues";
 import { RunReceipts } from "./run-receipts";
 import { ObservedRun } from "./observed-run";
 
@@ -123,98 +123,6 @@ export function AssessmentHistory({ targetId }: { targetId?: string }) {
     </Read>
   );
 }
-function Findings({ assessmentId }: { assessmentId?: string }) {
-  const FixHeading = assessmentId ? "h3" : "h2";
-  const [offset, set] = useState(0),
-    [q, search] = useState(""),
-    [severity, filter] = useState(""),
-    [sort, setSort] = useState("newest");
-  const params = new URLSearchParams({ offset: String(offset), q, sort });
-  if (severity) params.set("severity", severity);
-  if (assessmentId) params.set("assessmentId", assessmentId);
-  return (
-    <>
-      <div className="ledger-filters">
-        <label>
-          Search finding titles{" "}
-          <input
-            type="search"
-            maxLength={120}
-            value={q}
-            onChange={(e) => {
-              search(e.target.value);
-              set(0);
-            }}
-          />
-        </label>
-        <label>
-          Severity{" "}
-          <select
-            value={severity}
-            onChange={(e) => {
-              filter(e.target.value);
-              set(0);
-            }}
-          >
-            <option value="">All severities</option>
-            {["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"].map((s) => (
-              <option key={s}>{s}</option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Sort by{" "}
-          <select
-            value={sort}
-            onChange={(e) => {
-              setSort(e.target.value);
-              set(0);
-            }}
-          >
-            <option value="newest">Newest first</option>
-            <option value="oldest">Oldest first</option>
-            <option value="title">Finding title</option>
-          </select>
-        </label>
-      </div>
-      <Read path={"/api/v1/findings?" + params} schema={findings}>
-        {(data) => (
-          <>
-            {data.items.length === 0 && (
-              <p>No imported findings match this view.</p>
-            )}
-            {data.items.map((f) => (
-              <details className="ledger-entry" key={f.id}>
-                <summary>
-                  <strong>{f.name}</strong> · {f.normalizedSeverity}
-                </summary>
-                <p>
-                  {f.website} · {f.url}
-                </p>
-                <p>
-                  Confidence: {f.confidence} · Recorded{" "}
-                  {date(f.firstObservedAt)}
-                </p>
-                <p>{f.description}</p>
-                {f.method && <p>HTTP method: {f.method}</p>}
-                {f.parameter && <p>Parameter: {f.parameter}</p>}
-                <FixHeading style={{ font: "inherit" }}>Recommended fix</FixHeading>
-                <p>{f.remediation || "No remediation supplied."}</p>
-                <p>
-                  {f.cweId && "CWE-" + f.cweId} {f.wascId && "WASC-" + f.wascId}
-                </p>
-                <Link href={"/assessments/" + f.assessmentId}>
-                  Assessment {f.assessmentId}
-                </Link>
-              </details>
-            ))}
-            <Pager offset={offset} set={set} more={data.hasMore} />
-          </>
-        )}
-      </Read>
-    </>
-  );
-}
 function Runs({
   kind,
   assessmentId,
@@ -307,7 +215,7 @@ export function RecordsPage({
                 ? "Review this check and its recorded results."
                 : view === "assessments"
                   ? "Security checks requested for your websites."
-                  : "Explore observations recorded by completed security checks."}
+                  : "What your completed checks found, and what to do next."}
             </p>
           </div>
         </header>
@@ -335,6 +243,9 @@ export function RecordsPage({
                     {row.finishedAt ? date(row.finishedAt) : "Unrecorded"}
                   </p>
                 </section>
+                {row.findingCount !== null && (
+                  <AssessmentSummary id={id} evidence={row.evidence} />
+                )}
                 <RunReceipts
                   id={id}
                   canAssociate={
@@ -368,14 +279,17 @@ export function RecordsPage({
                   <p>Final results are unavailable for this check.</p>
                 ) : (
                   <>
-                    <p>{row.findingCount} recorded</p>
+                    <p>
+                      {row.findingCount} recorded. Raw scanner records stay available
+                      under each issue.
+                    </p>
                     <Link href={"/assessments/" + row.id + "/report"}>Open printable assessment report</Link>
                     {row.severities?.map((group) => (
                       <p key={group.severity}>
                         {group.severity} · {group.count}
                       </p>
                     ))}
-                    <Findings assessmentId={id} />
+                    <IssuesView assessmentId={id} />
                   </>
                 )}
               </>
@@ -384,7 +298,7 @@ export function RecordsPage({
         ) : view === "assessments" ? (
           <AssessmentHistory />
         ) : (
-          <Findings />
+          <IssuesView />
         )}
       </main>
     </>

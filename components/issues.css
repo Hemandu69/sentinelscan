@@ -1,0 +1,141 @@
+.issue-overview {
+  border-top: 1px solid var(--line);
+  padding: 22px 0 8px;
+}
+.issue-counts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 16px;
+}
+.issue-counts dt {
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 600;
+}
+.issue-counts dd {
+  font: 500 clamp(28px, 2.8vw, 42px) / 1.2 var(--serif);
+}
+.severity-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 26px;
+  margin: 4px 0 14px;
+}
+.severity-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.issue {
+  border-top: 1px solid var(--line);
+  padding: 26px 0;
+  overflow-wrap: anywhere;
+}
+.issue h2 {
+  font-size: clamp(23px, 2vw, 31px);
+  line-height: 1.2;
+  letter-spacing: -0.03em;
+  margin: 6px 0 8px;
+}
+.issue header p,
+.issue-details p,
+.issue-details li {
+  max-width: 74ch;
+}
+.issue-meta {
+  color: var(--muted);
+  font-size: 14px;
+  margin-top: 8px;
+}
+.issue-meta a,
+.disclosure a {
+  color: var(--copper);
+  text-decoration: underline;
+}
+.next-action {
+  border-left: 3px solid var(--copper);
+  background: var(--soft);
+  padding: 10px 14px;
+  margin: 12px 0;
+}
+.disclosure > summary {
+  cursor: pointer;
+  font-weight: 600;
+  padding: 6px 0;
+}
+.disclosure > summary:focus-visible,
+select:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 4px;
+}
+.issue-details section {
+  padding: 12px 0;
+}
+.issue-details h3,
+.assessment-summary h3 {
+  display: inline-block;
+  font: 600 16px var(--sans);
+  margin: 8px 10px 4px 0;
+}
+.assessment-summary h3 {
+  display: block;
+}
+.issue-details ol,
+.assessment-summary ul {
+  list-style: revert;
+  padding-left: 1.4rem;
+}
+.issue-details ol li,
+.assessment-summary li {
+  margin: 5px 0;
+}
+.plain li {
+  padding: 3px 0;
+}
+.origin {
+  display: inline-block;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 1px 7px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.origin-ai {
+  border-style: dashed;
+  border-color: var(--copper);
+  color: var(--ink);
+}
+.facts > div {
+  display: grid;
+  grid-template-columns: minmax(120px, 190px) 1fr;
+  gap: 12px;
+  border-top: 1px solid var(--line);
+  padding: 6px 0;
+}
+.facts dt {
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 600;
+}
+.provenance,
+.issue-details small {
+  color: var(--muted);
+  font-size: 13px;
+}
+.preline {
+  white-space: pre-line;
+}
+.issue .refresh {
+  margin-top: 10px;
+  min-height: 40px;
+}
+@media (max-width: 480px) {
+  .facts > div {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+}

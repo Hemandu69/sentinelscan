@@ -31,17 +31,37 @@ const detail = {
   severities: [{ severity: "LOW", count: 1 }],
 };
 const page = (items, hasMore = false) => ({ items, hasMore });
+const issue = (items) => ({
+  key: "a".repeat(64),
+  assessmentId: id,
+  website: "Fixture",
+  scanner: { title: items[0].name, ruleId: null, severity: items[0].normalizedSeverity, sourceSeverity: "Low", confidence: items[0].confidence, method: null, parameter: null, evidence: null, description: "Fixture", remediation: null, references: [], cweId: null, wascId: null },
+  guide: null,
+  findings: items.map((item) => ({ id: item.id, url: item.url, firstObservedAt: timestamp })),
+  endpoints: [...new Set(items.map((item) => item.url))],
+  analysis: { status: "NONE", errorCode: null, provider: null, model: null, analysedAt: null, result: null },
+});
+const listOf = (items) => ({
+  counts: { originalAlerts: null, findings: items.length, issues: items.length ? 1 : 0, endpoints: items.length ? 1 : 0 },
+  severities: { LOW: items.length ? 1 : 0 },
+  coverage: { analysed: 0, unanalysed: items.length ? 1 : 0 },
+  issues: items.length ? [issue(items)] : [],
+});
+let grouped = (_body, items) => listOf(items);
 function read(t, body, ...pages) {
   let offset = 0;
+  const served = [];
   t.mock.method(globalThis, "fetch", async (input) => {
     const url = new URL(input);
     if (url.pathname.endsWith("/" + id)) return Response.json(body);
+    if (url.pathname === "/api/v1/issues") return Response.json(grouped(body, served));
     assert.equal(url.searchParams.get("assessmentId"), id);
     assert.equal(url.searchParams.get("offset"), String(offset));
     const next = pages.shift();
     if (next instanceof Error) throw next;
     assert.ok(next);
     offset += next.items.length;
+    served.push(...next.items);
     return Response.json(next);
   });
   return loadReport(id, new AbortController().signal);
@@ -99,3 +119,20 @@ for (const [name, body, pages] of [
   test("withholds report for " + name, async (t) =>
     assert.rejects(read(t, body, ...pages)),
   );
+
+for (const [name, change] of [
+  ["missing finding", (list) => ((list.issues[0].findings = list.issues[0].findings.slice(1)), (list.counts.findings = 1), list)],
+  ["duplicated finding", (list) => ((list.issues[0].findings[1] = list.issues[0].findings[0]), list)],
+  ["changed severity", (list) => ((list.issues[0].scanner.severity = "HIGH"), (list.severities = { HIGH: 1 }), list)],
+  ["changed confidence", (list) => ((list.issues[0].scanner.confidence = "Low"), list)],
+  ["changed location", (list) => ((list.issues[0].findings[0].url = "http://other.invalid/"), list)],
+  ["inconsistent totals", (list) => ((list.counts.issues = 5), list)],
+])
+  test("withholds report when issues have a " + name, async (t) => {
+    const original = grouped;
+    grouped = (_body, items) => change(listOf(items));
+    t.after(() => (grouped = original));
+    await assert.rejects(
+      read(t, { ...detail, findingCount: 2, severities: [{ severity: "LOW", count: 2 }] }, page([row, { ...row, id: randomUUID() }])),
+    );
+  });

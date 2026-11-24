@@ -10,6 +10,8 @@ export type Site = {
 // Import collects complete evidence twice, each bounded at about five minutes.
 export function timeoutFor(path: string) {
   if (path.endsWith("/zap-import")) return 900000;
+  // Two attempts, each with one transport retry on the server.
+  if (/\/issues\/[a-f0-9]{64}\/analysis$/.test(path)) return 600000;
   if (path.endsWith("/zap-association") || path.endsWith("/zap-sync"))
     return 60000;
   if (path.includes("/zap-observations/") || path.includes("/zap/scans"))
@@ -136,6 +138,23 @@ async function send(
       ZAP_PROVIDER_ERROR: "ZAP reported an error.",
       ZAP_MALFORMED_RESPONSE: "ZAP returned incomplete or unexpected data.",
       ZAP_RESPONSE_TOO_LARGE: "ZAP returned more data than can be verified.",
+      AI_DISABLED: "AI analysis is not configured.",
+      AI_MISSING_KEY: "No AI API key is configured.",
+      AI_INVALID_CONFIGURATION: "The AI configuration is not valid.",
+      AI_INVALID_CREDENTIALS: "The AI provider refused the configured key.",
+      AI_TIMEOUT: "The AI provider did not answer in time.",
+      AI_RATE_LIMITED: "The AI provider is limiting requests. Try again later.",
+      AI_UNAVAILABLE: "The AI provider could not be reached.",
+      AI_PROVIDER_ERROR: "The AI provider reported an error.",
+      AI_REFUSED: "The AI provider declined this request.",
+      AI_TRUNCATED: "The AI answer was incomplete and was discarded.",
+      AI_INVALID_RESPONSE:
+        "The AI answer failed verification and was discarded.",
+      ANALYSIS_BUSY: "An analysis is already running.",
+      ANALYSIS_STORAGE_UNAVAILABLE:
+        "The analysis table is not available. Apply the reviewed migration first.",
+      ISSUE_NOT_FOUND: "This issue no longer exists. Reload the page.",
+      TOO_MANY_FINDINGS: "There are too many findings to show at once.",
       ZAP_SESSION_NOT_SAVED:
         "ZAP has no saved session. Create a named session before running scans.",
       ZAP_RUN_AMBIGUOUS: "ZAP lists this run ID more than once.",

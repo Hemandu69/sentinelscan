@@ -1,5 +1,6 @@
 import type { z } from "zod";
 import { request, RequestFailure } from "./api.ts";
+import { issueList } from "./issues.ts";
 import { assessmentDetail, finding, findings } from "./records.ts";
 
 export async function loadReport(id: string, signal: AbortSignal) {
@@ -64,5 +65,32 @@ export async function loadReport(id: string, signal: AbortSignal) {
   }
   if (counts.size)
     throw new RequestFailure("The assessment severity summary is incomplete.");
-  return { assessment, items };
+  // Issues only regroup the verified records. Every finding must appear exactly once.
+  const issues = issueList.parse(
+    await request("/api/v1/issues?assessmentId=" + encodeURIComponent(id), signal),
+  );
+  const grouped = issues.issues.flatMap((row) => row.findings.map((f) => f.id));
+  const byId = new Map(items.map((row) => [row.id, row]));
+  if (
+    grouped.length !== items.length ||
+    new Set(grouped).size !== grouped.length ||
+    issues.issues.some(
+      (issue) =>
+        issue.assessmentId !== id ||
+        issue.findings.some((f) => {
+          const row = byId.get(f.id);
+          return (
+            !row ||
+            row.url !== f.url ||
+            row.name !== issue.scanner.title ||
+            row.normalizedSeverity !== issue.scanner.severity ||
+            row.confidence !== issue.scanner.confidence
+          );
+        }),
+    )
+  )
+    throw new RequestFailure(
+      "The grouped issues differ from the recorded findings. Reload to try again.",
+    );
+  return { assessment, items, issues };
 }
