@@ -1,5 +1,7 @@
 import { configuredZapClient } from "./integrations/zap/client.ts";
 import { registerZap } from "./integrations/zap/routes.ts";
+import { configuredAi } from "./integrations/ai/provider.ts";
+import { registerIssues } from "./modules/issues/routes.ts";
 import { registerDashboard } from "./modules/dashboard/routes.ts";
 import Fastify from "fastify";
 import { PrismaClient, Prisma } from "@prisma/client";
@@ -19,6 +21,7 @@ export function buildApp(
   settings: Settings = settingsSchema.parse({}),
   resolve?: Resolve,
   zap = configuredZapClient(),
+  ai = configuredAi(),
 ) {
   const app = Fastify({ bodyLimit: 16384, logger: false });
   const consent = confirmations();
@@ -84,6 +87,7 @@ export function buildApp(
   registerTargets(app, db, consent, resolve);
   registerAssessments(app, db, consent, resolve);
   registerRecords(app, db);
+  registerIssues(app, db, ai);
   registerRunRecords(app, db, zap);
   registerObservation(app, db, zap);
   return app;

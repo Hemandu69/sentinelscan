@@ -20,6 +20,10 @@ Copy `.env.example` to `.env` on a fresh checkout and keep it private. Preserve 
 
 `test:database` creates and deletes its own fixture rows. `test:run-storage` rolls its transactions back.
 
+## Optional AI analysis
+
+Disabled unless `SENTINELSCAN_AI_PROVIDER=anthropic` and `ANTHROPIC_API_KEY` are set in `.env`. Calls are billed by the provider. Tests never contact it. See the documentation repository's `docs/finding-intelligence.md`.
+
 ## Assessment lifecycle
 
 | Field or status | Meaning |

@@ -53,6 +53,7 @@ model Finding {
  cweId Int? @map("cwe_id")
  wascId Int? @map("wasc_id")
  firstObservedAt DateTime @default(now()) @map("first_observed_at") @db.Timestamptz(3)
+ analysis FindingAnalysis?
  @@unique([assessmentId,fingerprint])
  @@index([assessmentId,normalizedSeverity])
  @@map("findings")
@@ -99,4 +100,18 @@ model RunEvidence {
  collectedAt DateTime @default(now()) @map("collected_at") @db.Timestamptz(3)
  @@id([assessmentId,kind])
  @@map("run_evidence")
+}
+
+model FindingAnalysis {
+ findingId String @id @db.Uuid @map("finding_id")
+ finding Finding @relation(fields:[findingId],references:[id],onDelete:Restrict)
+ status String
+ inputDigest String @map("input_digest")
+ promptVersion String @map("prompt_version")
+ provider String
+ model String
+ result Json?
+ errorCode String? @map("error_code")
+ analysedAt DateTime @default(now()) @map("analysed_at") @db.Timestamptz(3)
+ @@map("finding_analyses")
 }
