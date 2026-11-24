@@ -98,6 +98,8 @@ try {
     "<script>fixture()</script>",
   );
   assert.equal(await page.locator("article script").count(), 0);
+  await page.getByText("DOM-based XSS testing (ZAP rule 40026) is excluded").waitFor();
+  await page.getByText("Passive alerts are not included").waitFor();
   await page.emulateMedia({ media: "print" });
   assert.equal(await page.locator("nav").isVisible(), false);
   assert.equal(

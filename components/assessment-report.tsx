@@ -71,6 +71,15 @@ export function AssessmentReport({ id }: { id: string }) {
           <p>
             Assessment {id}
             <br />
+            Status {report.assessment.status}
+            <br />
+            Requested {new Date(report.assessment.requestedAt).toLocaleString()}
+            <br />
+            First observed running{" "}
+            {report.assessment.startedAt
+              ? new Date(report.assessment.startedAt).toLocaleString()
+              : "unrecorded"}
+            <br />
             Completed {new Date(report.assessment.finishedAt!).toLocaleString()}
           </p>
           <h2>
@@ -85,6 +94,27 @@ export function AssessmentReport({ id }: { id: string }) {
               </div>
             ))}
           </dl>
+          <section aria-labelledby="coverage">
+            <h2 id="coverage">Coverage limits</h2>
+            <ul>
+              <li>
+                DOM-based XSS testing (ZAP rule 40026) is excluded from the
+                approved scanner configuration.
+              </li>
+              <li>
+                Findings come only from alerts that ZAP attributed to this
+                active scan. Passive alerts are not included.
+              </li>
+              <li>
+                Duplicate alerts for the same rule, address, method and
+                parameter are recorded once.
+              </li>
+              <li>
+                The absence of a finding does not show that the website is
+                secure.
+              </li>
+            </ul>
+          </section>
           {report.items.map((row) => (
             <article key={row.id}>
               <h3>{row.name}</h3>
