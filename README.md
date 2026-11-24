@@ -39,6 +39,7 @@ It adds the Alpine package `nftables` to the local PostgreSQL image. The API run
 | `verify.ps1` | Checks existing containers, the database and ZAP credentials. Never creates or recreates anything. `-PersistenceRestart` also writes a marker in a diagnostic table and restarts PostgreSQL only. |
 | `verify-zap.cjs` | Read-only check that the key works and that missing or wrong keys are refused |
 | `verify-egress.cjs` | Proves the outbound firewall on throwaway containers it creates and removes |
+| `verify-egress-main.cjs` | Proves the firewall inside the real ZAP network, with the kernel's own refusal counter. Starts no scan and ends locked. Arguments: host and its validated IPv4 addresses. |
 | `observe-zap-resources.cjs` | Read-only memory, state and run samples. `--count 1..120 --interval-seconds 1..60` |
 | `restrict-secret-access.ps1` | Reports, or with `-Apply` removes, one group's access to the backups and both `.env` files. Preserves every other entry. |
 | `rotate-zap-key.cjs` | Confirms the log override and the configured image is available locally, twice, before writing a new key. Then recreates ZAP and checks that the new key is absent from its log. Requires approval. |
