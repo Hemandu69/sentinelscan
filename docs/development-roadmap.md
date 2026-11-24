@@ -5,8 +5,8 @@
 | 0 · Architecture | Accepted | Local-only, account-free workspace and three independent component repositories approved. |
 | 1 · Infrastructure | Verified | Windows host reported healthy PostgreSQL and ZAP containers with loopback bindings. |
 | 2 · Backend foundation | Verified | Prisma generated the client and applied the foundation migration. PostgreSQL lifecycle and persisted consent test passed. |
-| 3 · Provider integration | Partial | Authenticated version and alert-page reads passed against ZAP 2.17.0. Missing and invalid keys closed the connection, with successful valid-key controls. The inspection command read both scan listings; each returned zero runs. |
-| 4 · Assessment records | Implemented with fixture coverage | Operator receipt association, refresh and transactional import are available. Live import and restart verification remain pending. |
+| 3 · Provider integration | Verified once live | Authenticated version and alert-page reads passed against ZAP 2.17.0. Missing and invalid keys closed the connection, with successful valid-key controls. The inspection command read both scan listings; each returned zero runs. |
+| 4 · Assessment records | Verified once live | Operator receipt association, refresh and transactional import are available. One live import and its repetition are verified. Restart verification remains pending. |
 | 5 · Web foundation | Implemented | The operator verified website registration and three operational service indicators on Windows. |
 | 6 · Product workflow | Implemented in part | Assessment detail, findings exploration and a printable assessment report are available. Browser PDF export and the integrated operator journey await acceptance. |
 | 7 · Quality | Fixture-verified | Built pages pass fixture browser checks for layout, structure, contrast, loading, empty, error and print states. The live integrated workflow remains unverified. |
@@ -16,7 +16,7 @@ The separate "Stage 6 · Final Integration, Reliability & Submission Readiness" 
 
 ## Run storage migration
 
-Verified read-only on November 23: both migrations are recorded as finished, their checksums equal the committed files, and all columns, keys and checks match. The table holds two receipts saved during the November 23 run. Their fingerprint equals the one computed from the stopped ZAP container and its demo session, so the receipt and refresh SQL of that day worked against real PostgreSQL. The rolled-back storage suite, including a fixture import and its repetition, passed against real PostgreSQL on November 23 and left every row unchanged. No genuine import has run.
+Verified read-only on November 23: both migrations are recorded as finished, their checksums equal the committed files, and all columns, keys and checks match. The table holds two receipts saved during the November 23 run. Their fingerprint equals the one computed from the stopped ZAP container and its demo session, so the receipt and refresh SQL of that day worked against real PostgreSQL. The rolled-back storage suite, including a fixture import and its repetition, passed against real PostgreSQL on November 23 and left every row unchanged. The first genuine import ran on November 24.
 
 That run's log shows a spider that completed, and an active scan with 51 rules completed, 1 skipped, 0 stopped and 24 alerts, without DOM XSS rules. It cannot be imported: its in-memory run list ended with the container and its log contains the API key. Its lifecycle lines, sanitized, are the evidence fixture. The November 22 run remains UNKNOWN.
 

@@ -41,7 +41,7 @@ GET /api/v1/integrations/zap/session-fingerprint returns a nonsecret sessionKey.
 | Read endpoint | Contents |
 |---|---|
 | GET /api/v1/assessments | Newest assessments first. Optional targetId and offset. |
-| GET /api/v1/assessments/:id | Authorized URL snapshot, website, stored status and timestamps. startedAt is the first time an associated run was observed RUNNING. Finding count is null until completion. |
+| GET /api/v1/assessments/:id | Authorized URL snapshot, website, stored status and timestamps. startedAt is the first time an associated run was observed RUNNING. Finding count is null until completion. Completed assessments include a run evidence summary with any accepted exceptions. OUTCOME_UNKNOWN means that the scans ended without verified evidence. |
 | GET /api/v1/findings | Completed assessment findings. Optional assessmentId, severity, title search q and offset. |
 | GET /api/v1/integrations/zap/scans?kind=spider or kind=active | Runs visible on the fixed local provider, reported state, progress and origin if available. |
 
