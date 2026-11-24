@@ -1,0 +1,75 @@
+.assessment-report {
+  max-width: 52rem;
+  margin: 0 auto;
+  padding: clamp(1rem, 5vw, 4rem);
+  overflow-wrap: anywhere;
+}
+.assessment-report nav,
+.assessment-report dl {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: center;
+  justify-content: space-between;
+}
+.assessment-report header,
+.assessment-report article {
+  border-top: 1px solid currentColor;
+  margin-top: 1.75rem;
+  padding-top: 0.75rem;
+}
+.assessment-report ul {
+  list-style: disc;
+  padding-left: 1.25rem;
+}
+.assessment-report h2 {
+  font-size: 1.35rem;
+  margin-top: 1.25rem;
+}
+.assessment-report h1 {
+  font-size: 1.9rem;
+}
+.assessment-report h3 {
+  font: 600 1.1rem var(--serif);
+  margin-top: 0.75rem;
+}
+.assessment-report h4 {
+  font-weight: 600;
+  margin-top: 0.6rem;
+}
+.assessment-report dd {
+  margin: 0;
+  font-size: 1.6rem;
+  font-weight: 600;
+}
+@media print {
+  html:has(.assessment-report),
+  body:has(.assessment-report),
+  .assessment-report {
+    background: white;
+    color: #171e19;
+  }
+  .assessment-report {
+    margin: 0;
+    max-width: none;
+    padding: 0;
+    font-size: 11pt;
+  }
+  .assessment-report nav {
+    display: none;
+  }
+  .assessment-report h2,
+  .assessment-report h3,
+  .assessment-report h4 {
+    break-after: avoid;
+  }
+  .assessment-report p {
+    orphans: 3;
+    widows: 3;
+    white-space: pre-line;
+  }
+  .assessment-report dl,
+  .assessment-report li {
+    break-inside: avoid-page;
+  }
+}

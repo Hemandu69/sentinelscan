@@ -1,0 +1,367 @@
+const base = process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:4000";
+export type Site = {
+  id: string;
+  displayName: string;
+  canonicalUrl: string;
+  createdAt: string;
+};
+// Provider operations verify the Docker session and read ZAP several times. Each of those
+// reads may take five seconds on the server, so the browser must wait longer than their sum.
+// Import collects complete evidence twice, each bounded at about five minutes.
+export function timeoutFor(path: string) {
+  if (path.endsWith("/zap-import")) return 900000;
+  if (path.endsWith("/reports")) return 90000;
+  if (path === "/api/v1/scans" || path === "/api/v1/scans/readiness") return 90000;
+  if (path.endsWith("/scan") || path.endsWith("/scan/cancel")) return 20000;
+  // Two attempts, each with one transport retry on the server.
+  if (/\/issues\/[a-f0-9]{64}\/analysis$/.test(path)) return 600000;
+  if (path.endsWith("/zap-sync")) return 60000;
+  return 8000;
+}
+export class RequestFailure extends Error {
+  readonly code: string;
+  readonly reasons: string[];
+  constructor(message: string, code = "", reasons: string[] = []) {
+    super(message);
+    this.code = code;
+    this.reasons = reasons;
+  }
+}
+export class RequestTimeout extends RequestFailure {
+  name = "TimeoutError";
+}
+// Only messages written for the operator are displayed. Anything else is summarized.
+export function describeError(error: unknown) {
+  if (error instanceof RequestFailure) return error.message;
+  if (error instanceof TypeError) return "Could not reach the local API.";
+  return "The local API returned an unexpected response.";
+}
+export async function request(
+  path: string,
+  signal: AbortSignal,
+  payload?: unknown,
+): Promise<unknown> {
+  try {
+    return await send(path, signal, payload);
+  } catch (error) {
+    if (
+      !signal.aborted &&
+      error instanceof Error &&
+      error.name === "TimeoutError"
+    )
+      throw new RequestTimeout(
+        payload === undefined
+          ? "The local API did not respond in time."
+          : "No response arrived in time. The operation may still have finished. Check the saved record before retrying.",
+      );
+    throw error;
+  }
+}
+async function send(
+  path: string,
+  signal: AbortSignal,
+  payload?: unknown,
+): Promise<unknown> {
+  return (await open(path, signal, payload)).json();
+}
+// Returns a verified PDF. An error page or a changed file is never offered as a report.
+export async function requestPdf(path: string, signal: AbortSignal) {
+  try {
+    const res = await open(path, signal);
+    const type = res.headers.get("content-type") ?? "";
+    const digest = res.headers.get("x-report-sha256") ?? "";
+    const data = await res.arrayBuffer();
+    const head = new TextDecoder("latin1").decode(data.slice(0, 5));
+    if (!/^application\/pdf\b/.test(type) || head !== "%PDF-")
+      throw new RequestFailure("The local API did not return a PDF file.");
+    const hash = [...new Uint8Array(await crypto.subtle.digest("SHA-256", data))]
+      .map((byte) => byte.toString(16).padStart(2, "0"))
+      .join("");
+    if (hash !== digest)
+      throw new RequestFailure("The PDF does not match its checksum.");
+    return new Blob([data], { type: "application/pdf" });
+  } catch (error) {
+    if (!signal.aborted && error instanceof Error && error.name === "TimeoutError")
+      throw new RequestTimeout("The local API did not respond in time.");
+    throw error;
+  }
+}
+async function open(
+  path: string,
+  signal: AbortSignal,
+  payload?: unknown,
+): Promise<Response> {
+  const root = new URL(base);
+  if (
+    !["http://127.0.0.1:4000", "http://localhost:4000"].includes(root.origin) ||
+    root.username ||
+    root.password ||
+    root.pathname !== "/" ||
+    root.search ||
+    root.hash
+  )
+    throw new RequestFailure("Check the local API address.");
+  const res = await fetch(root.origin + path, {
+    cache: "no-store",
+    redirect: "error",
+    signal: AbortSignal.any([
+      signal,
+      AbortSignal.timeout(timeoutFor(path)),
+    ]),
+    ...(payload === undefined
+      ? {}
+      : {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    const messages: Record<string, string> = {
+      ZAP_INSTANCE_UNVERIFIABLE:
+        "Docker could not confirm the identity of the loopback ZAP service.",
+      ZAP_SESSION_CHANGED:
+        "The provider session differs from the recorded receipt. Import is blocked.",
+      ZAP_SUCCESS_OR_SCOPE_UNVERIFIED:
+        "ZAP has not supplied sufficient successful completion and scope evidence for both scans.",
+      ZAP_EVIDENCE_CHANGED:
+        "The run evidence changed while it was verified. Nothing was imported.",
+      ZAP_LOG_UNAVAILABLE:
+        "The ZAP container log could not be read. Nothing was imported.",
+      EVIDENCE_STORAGE_UNAVAILABLE:
+        "The evidence table is not available. Apply the reviewed migration first.",
+      ZAP_RUN_NOT_FOUND:
+        "This run is absent from the current provider inventory.",
+      ZAP_RUN_OUTSIDE_TARGET: "The provider reported a different target.",
+      ZAP_SCOPE_NOT_EXACT:
+        "The provider reported a different target path from the authorized website.",
+      ASSESSMENT_INELIGIBLE:
+        "This assessment's current state prevents that operation. Reload its latest status.",
+      BOTH_RUN_RECEIPTS_REQUIRED:
+        "This assessment has no complete pair of scan records to import.",
+      IMPORT_BUSY:
+        "Another import is in progress. Wait for it to finish before retrying.",
+      OBSERVATION_CHANGED:
+        "Another request updated this record. Reload the assessment.",
+      ZAP_ALERT_SET_CHANGED:
+        "The attributed alert list changed during retrieval. Retry after the results settle.",
+      TARGET_NOT_FOUND: "This website is unavailable or has been archived.",
+      NEW_CONFIRMATION_REQUIRED:
+        "Your authorization expired or was already used. Review the website again.",
+      TARGET_CHANGED:
+        "The target changed. Review the current website before confirming.",
+      ACTIVE_TARGET_EXISTS: "This website is already registered.",
+      DESTINATION_PROHIBITED:
+        "Use a website address permitted by the local target policy.",
+      INVALID_REQUEST: "Some values were not accepted. Check them and try again.",
+      NOT_FOUND: "The local API does not offer this operation.",
+      ASSESSMENT_NOT_FOUND: "This assessment does not exist.",
+      ASSESSMENT_SCOPE_NOT_AUTHORIZED:
+        "This assessment is not authorized for provider operations, or its website is archived.",
+      DEMO_SCOPE_DISABLED:
+        "The local API was started without the Juice Shop demo setting.",
+      CONFIRMATION_LIMIT:
+        "Too many authorization reviews are open. Wait five minutes and try again.",
+      DATABASE_UNAVAILABLE: "The database is unavailable.",
+      ZAP_UNAVAILABLE: "ZAP is unavailable.",
+      ZAP_TIMEOUT: "ZAP did not respond in time.",
+      ZAP_MISSING_CREDENTIALS: "The local API has no ZAP credential.",
+      ZAP_INVALID_CREDENTIALS: "ZAP refused the local API's credential.",
+      ZAP_PROVIDER_ERROR: "ZAP reported an error.",
+      ZAP_MALFORMED_RESPONSE: "ZAP returned incomplete or unexpected data.",
+      ZAP_RESPONSE_TOO_LARGE: "ZAP returned more data than can be verified.",
+      AI_DISABLED: "AI analysis is not configured.",
+      AI_MISSING_KEY: "No AI API key is configured.",
+      AI_INVALID_CONFIGURATION: "The AI configuration is not valid.",
+      AI_INVALID_CREDENTIALS: "The AI provider refused the configured key.",
+      AI_TIMEOUT: "The AI provider did not answer in time.",
+      AI_RATE_LIMITED: "The AI provider is limiting requests. Try again later.",
+      AI_UNAVAILABLE: "The AI provider could not be reached.",
+      AI_PROVIDER_ERROR: "The AI provider reported an error.",
+      AI_REFUSED: "The AI provider declined this request.",
+      AI_TRUNCATED: "The AI answer was incomplete and was discarded.",
+      AI_INVALID_RESPONSE:
+        "The AI answer failed verification and was discarded.",
+      ANALYSIS_BUSY: "An analysis is already running.",
+      ANALYSIS_STORAGE_UNAVAILABLE:
+        "The analysis table is not available. Apply the reviewed migration first.",
+      ASSESSMENT_NOT_COMPLETED:
+        "A report needs a completed assessment with verified results.",
+      REPORT_NOT_FOUND: "This report does not exist. Generate one first.",
+      REPORT_FILE_MISSING:
+        "The stored report file is missing. Generate a new report.",
+      REPORT_CORRUPT:
+        "The stored report no longer matches its checksum. Generate a new report.",
+      REPORT_BUSY: "Another report is being generated. Try again shortly.",
+      REPORT_TIMEOUT: "The report took too long to generate.",
+      REPORT_BROWSER_MISSING:
+        "Chrome or Edge is needed to generate PDF files, and neither was found.",
+      REPORT_PAGE_UNAVAILABLE:
+        "The report page could not be opened. Check that Watchtower is running.",
+      REPORT_PAGE_REFUSED:
+        "The report page could not verify its data, so no PDF was created.",
+      REPORT_CONTENT_MISMATCH:
+        "The report did not match the recorded findings, so no PDF was created.",
+      REPORT_RENDER_FAILED: "The PDF could not be generated.",
+      REPORT_STORAGE_FAILED: "The PDF could not be stored.",
+      SCAN_TARGET_NOT_APPROVED: "Scanning is not approved for this website.",
+      SCAN_ALREADY_RUNNING: "Another scan is already running.",
+      SCAN_NOT_READY: "The scan cannot start yet. Nothing was changed.",
+      SCAN_NOT_RUNNING: "No scan is running for this assessment.",
+      SCAN_NOT_CANCELLABLE:
+        "The scans have ended and results are being verified, so there is nothing left to stop.",
+      SCAN_IN_PROGRESS: "SentinelScan is running this scan. Use Stop scan instead.",
+      COMPARISON_ORDER: "Choose the older assessment as the earlier one.",
+      COMPARISON_DIFFERENT_WEBSITE: "These assessments belong to different websites.",
+      ISSUE_NOT_FOUND: "This issue no longer exists. Reload the page.",
+      TOO_MANY_FINDINGS: "There are too many findings to show at once.",
+      ZAP_SESSION_NOT_SAVED:
+        "ZAP has no saved session. Start a new security scan to create one.",
+      ZAP_RUN_AMBIGUOUS: "ZAP lists this run ID more than once.",
+      UNVERIFIED_PROVIDER_VERSION:
+        "ZAP is not the version this workspace was verified with.",
+      FINDING_OUTSIDE_TARGET:
+        "A finding lies outside the authorized website. Nothing was imported.",
+      FINDING_MISSING_REQUIRED_FIELD:
+        "A finding is missing required data. Nothing was imported.",
+    };
+    const code = body?.error;
+    const reasons: string[] = Array.isArray(body?.reasons)
+      ? body.reasons
+          .filter(
+            (item: unknown): item is string =>
+              typeof item === "string" && /^[A-Z_]{1,40}$/.test(item),
+          )
+          .slice(0, 20)
+      : [];
+    throw new RequestFailure(
+      (typeof code === "string" && Object.hasOwn(messages, code)
+        ? messages[code]
+        : "The local service could not complete this request.") +
+        (reasons.length && code === "ZAP_SUCCESS_OR_SCOPE_UNVERIFIED"
+          ? " Missing evidence: " + reasons.join(", ") + "."
+          : ""),
+      typeof code === "string" ? code : "",
+      reasons,
+    );
+  }
+  return res;
+}
+export function readSites(body: unknown): Site[] {
+  if (
+    !Array.isArray(body) ||
+    !body.every(
+      (s) =>
+        s &&
+        typeof s.id === "string" &&
+        typeof s.displayName === "string" &&
+        typeof s.canonicalUrl === "string" &&
+        /^https?:\/\//.test(s.canonicalUrl) &&
+        typeof s.createdAt === "string" &&
+        Number.isFinite(Date.parse(s.createdAt)),
+    )
+  )
+    throw new RequestFailure("Invalid website list.");
+  return body;
+}
+export function serviceReady(path: string, body: unknown) {
+  if (!body || typeof body !== "object") return false;
+  return path === "/health/zap"
+    ? "available" in body &&
+        body.available === true &&
+        "version" in body &&
+        typeof body.version === "string" &&
+        !!body.version
+    : "status" in body && body.status === "ok";
+}
+export type WebsiteDetail = Site & {
+  confirmation: {
+    token: string;
+    wording: string;
+    version: string;
+    url: string;
+    expiresAt: string;
+  };
+};
+const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export async function fetchWebsite(
+  id: string,
+  signal: AbortSignal,
+): Promise<WebsiteDetail> {
+  if (!uuid.test(id)) throw new RequestFailure("Invalid website ID.");
+  const value = await request("/api/v1/targets/" + id, signal);
+  const site = readSites([value])[0];
+  const confirmation =
+    value && typeof value === "object" && "confirmation" in value
+      ? value.confirmation
+      : null;
+  if (
+    site.id !== id ||
+    !confirmation ||
+    typeof confirmation !== "object" ||
+    !("url" in confirmation) ||
+    confirmation.url !== site.canonicalUrl ||
+    !("token" in confirmation) ||
+    typeof confirmation.token !== "string" ||
+    !uuid.test(confirmation.token) ||
+    !("version" in confirmation) ||
+    typeof confirmation.version !== "string" ||
+    !confirmation.version ||
+    !("wording" in confirmation) ||
+    typeof confirmation.wording !== "string" ||
+    !confirmation.wording.trim() ||
+    !("expiresAt" in confirmation) ||
+    typeof confirmation.expiresAt !== "string" ||
+    !Number.isFinite(Date.parse(confirmation.expiresAt))
+  ) {
+    throw new RequestFailure("The website authorization details could not be verified.");
+  }
+  return {
+    ...site,
+    confirmation: {
+      url: confirmation.url,
+      token: confirmation.token,
+      version: confirmation.version,
+      wording: confirmation.wording,
+      expiresAt: confirmation.expiresAt,
+    },
+  };
+}
+export async function createAssessment(
+  site: WebsiteDetail,
+  authorized: boolean,
+  signal: AbortSignal,
+) {
+  const consent = site.confirmation;
+  if (
+    !authorized ||
+    consent.url !== site.canonicalUrl ||
+    Date.parse(consent.expiresAt) <= Date.now()
+  )
+    throw new RequestFailure("Review the website and confirm a fresh authorization.");
+  const result = await request("/api/v1/assessments", signal, {
+    targetId: site.id,
+    url: site.canonicalUrl,
+    authorized: true,
+    authorizationTextVersion: consent.version,
+    confirmationToken: consent.token,
+  });
+  if (
+    !result ||
+    typeof result !== "object" ||
+    !("id" in result) ||
+    typeof result.id !== "string" ||
+    !uuid.test(result.id) ||
+    !("targetId" in result) ||
+    result.targetId !== site.id ||
+    !("targetUrlSnapshot" in result) ||
+    result.targetUrlSnapshot !== site.canonicalUrl ||
+    !("status" in result) ||
+    result.status !== "PENDING"
+  )
+    throw new RequestFailure(
+      "The creation receipt could not be verified. The request may have been saved.",
+    );
+  return { id: result.id, status: result.status };
+}
