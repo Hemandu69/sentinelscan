@@ -1,10 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { ApiError } from "../../lib/errors.ts";
 export const wording =
-  "I own this website or have explicit permission to perform security testing on it.";
-export const version = "2";
-// Consent given under an earlier wording stays valid for the assessment it was given for.
-export const acceptedVersions = ["1", version];
+  "I own this target or have explicit authorization to assess the displayed URL.";
+export const version = "1";
+// Version "2" was used briefly on 24 November 2026 and stays reserved for its own wording:
+// "I own this website or have explicit permission to perform security testing on it."
 export function confirmations(now = Date.now) {
   const pending = new Map<
     string,

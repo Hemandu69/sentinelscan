@@ -42,17 +42,14 @@ export const dockerResources = {
       shop,
     );
   },
-  // The demo website must be running only when it is the website being scanned.
-  async sample(demo: boolean) {
+  async sample() {
     const state = await docker(
       "inspect",
       "--format",
       "{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{end}} {{.State.OOMKilled}}",
       zap,
     );
-    const target = demo
-      ? await docker("inspect", "--format", "{{.State.Status}}", shop)
-      : "running";
+    const target = await docker("inspect", "--format", "{{.State.Status}}", shop);
     const usage = await docker("stats", "--no-stream", "--format", "{{.MemPerc}}", zap);
     const match = /^(\d{1,3}(?:\.\d+)?)%$/.exec(usage);
     return {

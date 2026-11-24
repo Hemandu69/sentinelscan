@@ -4,7 +4,12 @@ import { expect, test } from "vitest";
 import { buildApp } from "../src/app.ts";
 import { validateLocalDatabaseUrl } from "../src/config/local.ts";
 import { normalize } from "../src/integrations/zap/findings.ts";
-import { persistFinalFindings } from "../src/modules/assessments/persist-findings.ts";
+import { persistFinalFindingsTx } from "../src/modules/assessments/persist-findings.ts";
+const persistFinalFindings = (
+  db: PrismaClient,
+  id: string,
+  findings: Parameters<typeof persistFinalFindingsTx>[2],
+) => db.$transaction((tx) => persistFinalFindingsTx(tx, id, findings));
 
 test.runIf(
   process.env.TEST_DATABASE === "1" ||

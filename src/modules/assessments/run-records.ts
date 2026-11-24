@@ -11,13 +11,12 @@ import {
   judge,
 } from "../../integrations/zap/evidence.ts";
 import { readContainerLog } from "../../integrations/zap/run-log.ts";
-import { demoTarget, registeredScope } from "../../lib/security/destination.ts";
+import { demoTarget as demo, registeredScope } from "../../lib/security/destination.ts";
 import { ApiError } from "../../lib/errors.ts";
-import { acceptedVersions } from "./consent.ts";
+import { version as consentVersion } from "./consent.ts";
 import { persistFinalFindingsTx } from "./persist-findings.ts";
 
-const kinds = z.enum(["spider", "active"]);
-type Kind = z.infer<typeof kinds>;
+type Kind = "spider" | "active";
 type Run = {
   kind: Kind;
   scan_id: string;
@@ -29,13 +28,7 @@ type Run = {
 };
 type Tx = Prisma.TransactionClient;
 const params = z.strictObject({ id: z.uuid() });
-const binding = z.strictObject({
-  kind: kinds,
-  scanId: z.string().regex(/^\d{1,12}$/),
-  sessionKey: z.string().regex(/^[a-f0-9]{64}$/),
-  confirmedOperatorReceipt: z.literal(true),
-  target: z.literal(demoTarget),
-});
+type Receipt = { kind: Kind; scanId: string; sessionKey: string };
 async function runs(tx: Tx, id: string) {
   return tx.$queryRaw<
     Run[]
@@ -43,19 +36,16 @@ async function runs(tx: Tx, id: string) {
 }
 async function eligible(tx: Tx, id: string) {
   const [row] = await tx.$queryRaw<
-    { status: string; target: string; eligible: boolean }[]
-  >`SELECT a.status, a.target_url_snapshot AS target, (a.target_url_snapshot=t.canonical_url AND t.archived_at IS NULL AND a.authorization_confirmed_at IS NOT NULL AND a.authorization_text_version=ANY(${acceptedVersions}::text[])) AS eligible FROM assessments a JOIN targets t ON a.target_id=t.id WHERE a.id=${id}::uuid FOR UPDATE OF a,t`;
+    { status: string; eligible: boolean }[]
+  >`SELECT a.status, (a.target_url_snapshot=${demo} AND t.canonical_url=${demo} AND t.archived_at IS NULL AND a.authorization_confirmed_at IS NOT NULL AND a.authorization_text_version=${consentVersion}) AS eligible FROM assessments a JOIN targets t ON a.target_id=t.id WHERE a.id=${id}::uuid FOR UPDATE OF a,t`;
   if (!row) throw new ApiError(404, "ASSESSMENT_NOT_FOUND");
   if (!row.eligible) throw new ApiError(403, "ASSESSMENT_SCOPE_NOT_AUTHORIZED");
-  // Public websites were validated, and their addresses enforced, when their scan started.
-  // Their receipts can only come from that scan.
-  if (row.target === demoTarget)
-    try {
-      await registeredScope(demoTarget);
-    } catch {
-      throw new ApiError(403, "DEMO_SCOPE_DISABLED");
-    }
-  return row;
+  try {
+    await registeredScope(demo);
+  } catch {
+    throw new ApiError(403, "DEMO_SCOPE_DISABLED");
+  }
+  return row.status;
 }
 // Cancelling is local bookkeeping. It needs no provider access and stays available
 // when the target is archived or outside the demo scope.
@@ -66,7 +56,7 @@ async function lockedStatus(tx: Tx, id: string) {
   if (!row) throw new ApiError(404, "ASSESSMENT_NOT_FOUND");
   return row.status;
 }
-async function observe(zap: ZapClient, kind: Kind, id: string, target: string) {
+async function observe(zap: ZapClient, kind: Kind, id: string) {
   const matches = (await zap.inspectRuns(kind)).filter((row) => row.id === id);
   if (matches.length !== 1)
     throw new ApiError(
@@ -74,9 +64,9 @@ async function observe(zap: ZapClient, kind: Kind, id: string, target: string) {
       matches.length ? "ZAP_RUN_AMBIGUOUS" : "ZAP_RUN_NOT_FOUND",
     );
   const row = matches[0];
-  if (row.reportedOrigin && row.reportedOrigin !== new URL(target).origin)
+  if (row.reportedOrigin && row.reportedOrigin !== new URL(demo).origin)
     throw new ApiError(409, "ZAP_RUN_OUTSIDE_TARGET");
-  if (row.reportedOrigin && !row.exactRootUrl)
+  if (row.reportedOrigin && !row.exactDemoUrl)
     throw new ApiError(409, "ZAP_SCOPE_NOT_EXACT");
   return {
     state: row.state,
@@ -107,7 +97,7 @@ const publicRun = (row: Run) => ({
   observed_at: row.observed_at,
 });
 export type RunRecords = ReturnType<typeof createRunRecords>;
-// The verified operations, shared by the operator routes and the scan orchestrator.
+// The verified operations, shared by the routes and the scan orchestrator.
 export function createRunRecords(
   db: PrismaClient,
   zap: ZapClient,
@@ -116,18 +106,14 @@ export function createRunRecords(
 ) {
   async function associate(
     id: string,
-    input: Pick<z.infer<typeof binding>, "kind" | "scanId" | "sessionKey">,
-    manual = false,
+    input: Receipt,
   ): Promise<Run> {
-    const { status: initial, target, existing } = await db.$transaction(
+    const { status: initial, existing } = await db.$transaction(
       async (tx) => ({
-        ...(await eligible(tx, id)),
+        status: await eligible(tx, id),
         existing: (await runs(tx, id)).find((r) => r.kind === input.kind),
       }),
     );
-    // Scans run by hand have no enforced destination, so only the demo accepts them.
-    if (manual && target !== demoTarget)
-      throw new ApiError(403, "ASSESSMENT_SCOPE_NOT_AUTHORIZED");
     if (existing) {
       if (
         existing.scan_id === input.scanId &&
@@ -142,10 +128,10 @@ export function createRunRecords(
         throw new ApiError(409, "ZAP_SESSION_CHANGED");
     };
     await verify();
-    const sample = await observe(zap, input.kind, input.scanId, target);
+    const sample = await observe(zap, input.kind, input.scanId);
     await verify();
     return db.$transaction(async (tx) => {
-      const { status } = await eligible(tx, id),
+      const status = await eligible(tx, id),
         current = await runs(tx, id);
       const old = current.find((r) => r.kind === input.kind);
       if (
@@ -176,24 +162,23 @@ export function createRunRecords(
   }
   async function sync(id: string) {
     const snapshot = await db.$transaction(async (tx) => ({
-      ...(await eligible(tx, id)),
+      status: await eligible(tx, id),
       runs: await runs(tx, id),
     }));
-    if (!snapshot.runs.length || isClosed(snapshot.status))
-      return { status: snapshot.status, runs: snapshot.runs };
+    if (!snapshot.runs.length || isClosed(snapshot.status)) return snapshot;
     const session = await getSession();
     if (snapshot.runs.some((r) => r.session_key !== session))
       throw new ApiError(409, "ZAP_SESSION_CHANGED");
     const samples = await Promise.all(
       snapshot.runs.map(async (r) => ({
         ...r,
-        ...(await observe(zap, r.kind, r.scan_id, snapshot.target)),
+        ...(await observe(zap, r.kind, r.scan_id)),
       })),
     );
     if ((await getSession()) !== session)
       throw new ApiError(409, "ZAP_SESSION_CHANGED");
     return db.$transaction(async (tx) => {
-      let { status } = await eligible(tx, id);
+      let status = await eligible(tx, id);
       if (!isClosed(status)) {
         const liveRuns = await runs(tx, id);
         if (liveRuns.length !== samples.length)
@@ -257,7 +242,7 @@ export function createRunRecords(
   const importing = new Set<string>();
   async function importRun(id: string) {
     const snapshot = await db.$transaction(async (tx) => ({
-      ...(await eligible(tx, id)),
+      status: await eligible(tx, id),
       runs: await runs(tx, id),
     }));
     if (snapshot.runs.length !== 2)
@@ -297,7 +282,7 @@ export function createRunRecords(
           getSession,
           readLog,
           receipts,
-          snapshot.target,
+          demo,
         );
         if (snapshot.runs.some((run) => run.session_key !== facts.sessionKey))
           throw new ApiError(409, "ZAP_SESSION_CHANGED");
@@ -321,7 +306,7 @@ export function createRunRecords(
         throw new ApiError(409, "ZAP_SUCCESS_OR_SCOPE_UNVERIFIED", unverified);
       const findings = ended
         ? []
-        : await zap.readAttributedFindings(receipts.active.scanId, snapshot.target);
+        : await zap.readAttributedFindings(receipts.active.scanId, demo);
       if (!ended && findings.length !== initial.facts.attributedAlerts)
         throw new ApiError(409, "ZAP_ALERT_SET_CHANGED");
       const confirmed = await collect();
@@ -329,7 +314,7 @@ export function createRunRecords(
         throw new ApiError(409, "ZAP_EVIDENCE_CHANGED");
       const observedAt = new Date();
       return await db.$transaction(async (tx) => {
-        const { status } = await eligible(tx, id);
+        const status = await eligible(tx, id);
         if (status === "COMPLETED")
           return {
             status,
@@ -396,7 +381,7 @@ export function createRunRecords(
   return { associate, sync, cancelTracking, importRun, execution };
 }
 
-// Session fingerprints stay on the server. Operators read them with the zap:session command.
+// Receipts are created by the scan orchestrator only. Session fingerprints stay on the server.
 export function registerRunRecords(
   app: FastifyInstance,
   db: PrismaClient,
@@ -416,10 +401,6 @@ export function registerRunRecords(
   app.get(base + "/execution", async (req) => {
     const result = await records.execution(params.parse(req.params).id);
     return { ...result, runs: result.runs.map(publicRun) };
-  });
-  app.post(base + "/zap-association", async (req) => {
-    const id = own(req.params);
-    return publicRun(await records.associate(id, binding.parse(req.body), true));
   });
   app.post(base + "/zap-sync", async (req) => {
     const result = await records.sync(own(req.params));

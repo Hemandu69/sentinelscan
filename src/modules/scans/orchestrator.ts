@@ -2,10 +2,9 @@ import type { PrismaClient } from "@prisma/client";
 import type { ZapClient } from "../../integrations/zap/client.ts";
 import { parseRunLog, type ReadLog } from "../../integrations/zap/run-log.ts";
 import { ApiError } from "../../lib/errors.ts";
-import { demoTarget, scanTarget, type Resolve } from "../../lib/security/destination.ts";
+import { demoTarget, registeredScope } from "../../lib/security/destination.ts";
 import type { RunRecords } from "../assessments/run-records.ts";
-import { safety } from "./exclusions.ts";
-import type { Egress } from "./egress.ts";
+import { demoDestination, type Egress } from "./egress.ts";
 import type { Resources } from "./resources.ts";
 
 // Fixed on the server. A browser can only choose to use it.
@@ -27,7 +26,6 @@ export type Stage =
 type Kind = "spider" | "active";
 export type Job = {
   assessmentId: string;
-  target: string;
   stage: Stage;
   stageAt: Date;
   scans: Partial<Record<Kind, { id: string; progress: number | null; requests: number | null; alerts: number | null }>>;
@@ -40,13 +38,6 @@ export type Job = {
 };
 const ended: Stage[] = ["COMPLETED", "FAILED", "CANCELLED", "OUTCOME_UNKNOWN"];
 class Stopped extends Error {}
-// Fixed codes that say why a website cannot be scanned.
-const targetReasons = (error: unknown): readonly string[] =>
-  error instanceof ApiError
-    ? error.reasons.length
-      ? error.reasons
-      : [error.message]
-    : ["TARGET_VALIDATION_FAILED"];
 const limits = { spider: 15 * 60_000, active: 90 * 60_000 };
 
 export function createOrchestrator(deps: {
@@ -57,7 +48,6 @@ export function createOrchestrator(deps: {
   readLog: ReadLog;
   resources: Resources;
   egress: Egress;
-  resolve?: Resolve;
   wait?: (ms: number) => Promise<unknown>;
   now?: () => number;
 }) {
@@ -72,33 +62,24 @@ export function createOrchestrator(deps: {
   const running = () => [...jobs.values()].find((job) => !ended.includes(job.stage)) ?? null;
   const isActive = (id: string) => running()?.assessmentId === id;
 
-  const validate = (url: string) => scanTarget(url, resources.demoAddress, deps.resolve);
-  // Whether a registered address may be scanned at all. Read-only. Consent is separate.
-  async function eligibility(url: string) {
-    const reasons = new Set<string>();
-    let addresses: string[] = [];
-    try {
-      addresses = (await validate(url)).addresses;
-    } catch (error) {
-      for (const reason of targetReasons(error)) reasons.add(reason);
-    }
-    const state = reasons.size
-      ? reasons.has("DOCKER_UNAVAILABLE") || reasons.has("DEMO_SCOPE_DISABLED")
-        ? "UNAVAILABLE"
-        : "VALIDATION_FAILED"
-      : "ELIGIBLE";
-    if (state === "ELIGIBLE" && !(await egress.available()))
-      return { state: "UNAVAILABLE" as const, reasons: ["EGRESS_GUARD_UNAVAILABLE"], addresses };
-    return { state: state as "ELIGIBLE" | "VALIDATION_FAILED" | "UNAVAILABLE", reasons: [...reasons].sort(), addresses };
-  }
   // Read-only checks. Every one must hold before consent is used or anything is started.
-  async function readiness(url: string, ownLaunch = false) {
+  async function readiness(ownLaunch = false) {
     const reasons = new Set<string>();
     if (running() || locking || (launching && !ownLaunch)) reasons.add("SCAN_ALREADY_RUNNING");
-    for (const reason of (await eligibility(url)).reasons) reasons.add(reason);
+    try {
+      await registeredScope(demoTarget);
+    } catch {
+      reasons.add("DEMO_SCOPE_DISABLED");
+    }
+    try {
+      demoDestination(await resources.demoAddress());
+      if (!(await egress.available())) reasons.add("EGRESS_GUARD_UNAVAILABLE");
+    } catch (error) {
+      reasons.add(error instanceof ApiError ? error.message : "DOCKER_UNAVAILABLE");
+    }
     try {
       const container = await resources.configuration();
-      const sample = await resources.sample(url === demoTarget);
+      const sample = await resources.sample();
       if (container.memoryBytes !== configuration.memoryBytes || container.heap !== configuration.heap)
         reasons.add("RESOURCE_LIMITS_CHANGED");
       if (!sample.healthy) reasons.add("SERVICE_UNHEALTHY");
@@ -217,6 +198,9 @@ export function createOrchestrator(deps: {
     else await finish(job, "OUTCOME_UNKNOWN", code === "OPERATOR_CANCELLED_SCAN" ? "CANCELLATION_UNCONFIRMED" : code);
     throw new Stopped();
   }
+  // ZAP reports usage statistics when a session changes. The firewall refuses that, which is intended.
+  const telemetry =
+    /^\S+ \d+ \[ZAP-telemetry-stats\] ERROR org\.zaproxy\.addon\.callhome\.ExtensionCallHome - [a-z]+\.zaproxy\.org: Temporary failure in name resolution$/;
   // Only lines written since this scan began. Earlier messages belong to something else.
   function newErrors(text: string, since: number) {
     return text.split("\n").some((line) => {
@@ -224,11 +208,12 @@ export function createOrchestrator(deps: {
       return (
         Number.isFinite(at) &&
         at >= since - 2000 &&
+        !telemetry.test(line.trimEnd()) &&
         /^\S+ \d+ \[[^\]]+\] (?:ERROR|FATAL) |OutOfMemoryError/.test(line)
       );
     });
   }
-  async function follow(job: Job, kind: Kind, session: string, origin: string, rules: string) {
+  async function follow(job: Job, kind: Kind, session: string, rules: string) {
     const scan = job.scans[kind]!;
     const started = now();
     let failures = 0;
@@ -242,7 +227,7 @@ export function createOrchestrator(deps: {
         scan.progress = rows[0].progress;
         scan.requests = rows[0].requests;
         scan.alerts = rows[0].alerts;
-        const sample = await resources.sample(job.target === demoTarget);
+        const sample = await resources.sample();
         job.memoryPercent = sample.memoryPercent;
         if (sample.memoryPercent !== null)
           job.peakMemoryPercent = Math.max(job.peakMemoryPercent ?? 0, sample.memoryPercent);
@@ -259,7 +244,7 @@ export function createOrchestrator(deps: {
         } else if (sample.memoryPercent === null || sample.memoryPercent > configuration.memoryStopPercent)
           reason = "SCAN_STOPPED_MEMORY";
         else if (!sample.healthy) reason = "SCAN_STOPPED_SERVICE";
-        else if (sites.some((site) => site !== origin)) reason = "SCAN_STOPPED_SCOPE";
+        else if (sites.some((site) => site !== new URL(demoTarget).origin)) reason = "SCAN_STOPPED_SCOPE";
         else if (newErrors(log.text, started) || /OutOfMemoryError/.test(log.errors))
           reason = "SCAN_STOPPED_ERRORS";
         else if (now() - started > limits[kind]) reason = "SCAN_STOPPED_TIME";
@@ -290,35 +275,36 @@ export function createOrchestrator(deps: {
     try {
       stage(job, "INITIALIZING");
       await setStatus(id, "INITIALIZING", null, false);
-      // Resolved again now. From here on only these addresses are reachable from ZAP.
-      const target = await validate(job.target);
+      await registeredScope(demoTarget);
+      const destination = demoDestination(await resources.demoAddress());
       await cancelledBetween();
+      // From here on only the demo is reachable from ZAP, and that is proven first.
       guarding = true;
       locking++;
-      const rules = await egress.apply(target);
+      const rules = await egress.apply(destination);
       await cancelledBetween();
       const name = `sentinelscan-${id.slice(0, 8)}-${now()}`;
       await zap.newSession(name);
       if (!(await zap.sessionLocation()).endsWith(`/${name}.session`))
         throw new ApiError(409, "ZAP_SESSION_NOT_SAVED");
       const session = await getSession();
-      await zap.configureScan(safety(target.url));
+      await zap.resetScanOptions();
       await cancelledBetween();
 
       stage(job, "SPIDER_RUNNING");
       started = true;
-      const spider = await zap.startSpider(target.url);
+      const spider = await zap.startSpider();
       job.scans.spider = { id: spider, progress: null, requests: null, alerts: null };
       await records.associate(id, { kind: "spider", scanId: spider, sessionKey: session });
-      await follow(job, "spider", session, target.origin, rules);
+      await follow(job, "spider", session, rules);
 
       stage(job, "SPIDER_VERIFYING");
       const log = await currentLog({ spider });
-      const scope = await zap.inspectScope("spider", spider, target.url);
+      const scope = await zap.inspectDemoScope("spider", spider);
       if (
         log.anomalies.length ||
         !log.spider?.complete ||
-        log.spider.target !== target.url ||
+        log.spider.target !== demoTarget ||
         scope.evidence !== "OBSERVED_TARGET_ORIGIN" ||
         (await getSession()) !== session
       ) {
@@ -327,25 +313,16 @@ export function createOrchestrator(deps: {
       }
       await cancelledBetween();
 
-      // The website must still be valid, and the firewall unchanged, before anything is tested.
-      const invalid = await validate(target.url).then(
-        () => null,
-        (error: unknown) => targetReasons(error),
-      );
-      if (invalid) {
-        await finish(job, "FAILED", "SCAN_TARGET_INVALID", invalid);
-        return;
-      }
       if (!(await egress.holds(rules))) {
         await finish(job, "FAILED", "SCAN_STOPPED_EGRESS");
         return;
       }
 
       stage(job, "ACTIVE_RUNNING");
-      const active = await zap.startActive(target.url);
+      const active = await zap.startActive();
       job.scans.active = { id: active, progress: null, requests: null, alerts: null };
       await records.associate(id, { kind: "active", scanId: active, sessionKey: session });
-      await follow(job, "active", session, target.origin, rules);
+      await follow(job, "active", session, rules);
 
       // Evidence, validation and import are one verified operation.
       stage(job, "COLLECTING_EVIDENCE");
@@ -373,7 +350,7 @@ export function createOrchestrator(deps: {
       }
     } catch (error) {
       if (error instanceof Stopped) return;
-      const reasons = error instanceof ApiError ? targetReasons(error) : [];
+      const reasons = error instanceof ApiError ? [error.message] : [];
       // Before the first launch request nothing was tested. Afterwards that is not certain.
       try {
         const scan = job.scans.active ? "active" : job.scans.spider ? "spider" : null;
@@ -396,13 +373,12 @@ export function createOrchestrator(deps: {
       }
     }
   }
-  async function begin(url: string, create: () => Promise<{ id: string }>) {
-    const check = await readiness(url, true);
+  async function begin(create: () => Promise<{ id: string }>) {
+    const check = await readiness(true);
     if (!check.ready) throw new ApiError(409, "SCAN_NOT_READY", check.reasons);
     const { id } = await create();
     const job: Job = {
       assessmentId: id,
-      target: url,
       stage: "PREPARING",
       stageAt: new Date(now()),
       scans: {},
@@ -418,17 +394,16 @@ export function createOrchestrator(deps: {
     return id;
   }
   return {
-    readiness: (url: string) => readiness(url),
-    eligibility,
+    readiness: () => readiness(),
     isActive,
     job: (id: string) => jobs.get(id) ?? null,
     // The same request key always leads to the same assessment, whatever the browser repeats.
-    async launch(requestKey: string, url: string, create: () => Promise<{ id: string }>) {
+    async launch(requestKey: string, create: () => Promise<{ id: string }>) {
       const known = keys.get(requestKey);
       if (known) return { assessmentId: await known, repeated: true };
       if (launching || locking || running()) throw new ApiError(409, "SCAN_ALREADY_RUNNING");
       launching = true;
-      const attempt = begin(url, create);
+      const attempt = begin(create);
       keys.set(requestKey, attempt);
       try {
         const assessmentId = await attempt;

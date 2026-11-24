@@ -77,8 +77,8 @@ export async function collectEvidence(
     attributedAlerts: await zap.inspectAlertIds(receipts.active.scanId),
     progress: await zap.scanProgress(receipts.active.scanId),
     scope: {
-      spider: await zap.inspectScope("spider", receipts.spider.scanId, target),
-      active: await zap.readActiveMessages(receipts.active.scanId, target),
+      spider: await zap.inspectDemoScope("spider", receipts.spider.scanId),
+      active: await zap.readActiveMessages(receipts.active.scanId),
     },
     credentialInLog:
       zap.mentionsCredential(raw.text) || zap.mentionsCredential(raw.errors),

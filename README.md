@@ -1,6 +1,6 @@
 # SentinelScan API
 
-Fastify 5, TypeScript, Prisma and PostgreSQL. Binds to 127.0.0.1:4000 for one local operator. Authentication is intentionally absent. This service alone holds the ZAP key and contacts ZAP. It starts and stops scans only through the controlled scan service, only for eligible websites behind the outbound firewall, and never requests a registered website itself.
+Fastify 5, TypeScript, Prisma and PostgreSQL. Binds to 127.0.0.1:4000 for one local operator. Authentication is intentionally absent. This service alone holds the ZAP key and contacts ZAP. It starts and stops scans only through the controlled scan service, only for the approved demo address, and never requests a registered website itself.
 
 ## Configure
 
@@ -13,7 +13,6 @@ Copy `.env.example` to `.env` on a fresh checkout and keep it private. Preserve 
 | `npm.cmd ci`, then `npm.cmd run generate` | Install and generate the Prisma client |
 | `npm.cmd start` | Run the API |
 | `npm.cmd test`, `npm.cmd run typecheck`, `npm.cmd run lint` | Offline checks. Live suites are skipped. |
-| `npm.cmd run zap:session` | Read and display the current provider session fingerprint and its run IDs. Stores and associates nothing. |
 | `npm.cmd run inspect:zap` | Read existing provider runs. `-- --evidence <spider id> <active id>` rehearses the evidence contract read-only. |
 | `npm.cmd run test:database`, `test:run-storage`, `test:dashboard:live`, `test:zap:live` | Live suites. Run only in an approved integration window. |
 | `.\verify-and-migrate.ps1 -AssessmentId <id>` | Back up, verify and migrate an existing database. Requires approval. |
@@ -22,7 +21,7 @@ Copy `.env.example` to `.env` on a fresh checkout and keep it private. Preserve 
 
 ## Reports
 
-PDF files are rendered from Watchtower's report page with Chrome or Edge and stored in `%LOCALAPPDATA%\SentinelScan\reports`. `npm.cmd run report:adopt -- <assessment id> <pdf> <sha256>` records a PDF that was printed earlier; it copies the file and leaves the original unchanged.
+PDF files are rendered from Watchtower's report page with Chrome or Edge and stored in `%LOCALAPPDATA%\SentinelScan\reports`.
 
 ## Optional AI analysis
 

@@ -98,7 +98,7 @@ test.runIf(process.env.npm_lifecycle_event === "test:run-storage")(
               state: "RUNNING",
               progress: 20,
               reportedOrigin: null,
-              exactRootUrl: false,
+              exactDemoUrl: false,
               outcome: "RUNNING",
               requests: 5,
               alerts: 0,
@@ -112,7 +112,7 @@ test.runIf(process.env.npm_lifecycle_event === "test:run-storage")(
             const [{ ready }] = await tx.$queryRaw<
               { ready: boolean }[]
             >`SELECT to_regclass('run_evidence') IS NOT NULL AS ready`;
-            registerRunRecords(
+            const records = registerRunRecords(
               app,
               {
                 finding: tx.finding,
@@ -125,7 +125,7 @@ test.runIf(process.env.npm_lifecycle_event === "test:run-storage")(
                   "/home/zap/.ZAP/session/demo.session",
                 inspectAlertIds: async () => 0,
                 readAttributedFindings: async () => [],
-                inspectScope: async () => ({
+                inspectDemoScope: async () => ({
                   evidence: "OBSERVED_TARGET_ORIGIN",
                   count: 5,
                 }),
@@ -169,18 +169,8 @@ test.runIf(process.env.npm_lifecycle_event === "test:run-storage")(
                 payload,
               });
             try {
-              for (const kind of ["spider", "active", "spider"])
-                expect(
-                  (
-                    await post("zap-association", {
-                      kind,
-                      scanId: "0",
-                      sessionKey,
-                      target: url,
-                      confirmedOperatorReceipt: true,
-                    })
-                  ).statusCode,
-                ).toBe(200);
+              for (const kind of ["spider", "active", "spider"] as const)
+                await records.associate(id, { kind, scanId: "0", sessionKey });
               row.progress = 40;
               expect((await post("zap-sync")).json()).toMatchObject({
                 status: "ACTIVE_SCAN_RUNNING",

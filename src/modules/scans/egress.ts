@@ -2,7 +2,15 @@ import { execFile } from "node:child_process";
 import { isIPv4 } from "node:net";
 import { promisify } from "node:util";
 import { ApiError } from "../../lib/errors.ts";
-import type { ScanTarget } from "../../lib/security/destination.ts";
+import { demoTarget } from "../../lib/security/destination.ts";
+
+export type ScanTarget = { host: string; port: number; addresses: string[] };
+// The demo container's current address on its own Docker network. Nothing else is accepted.
+export function demoDestination(address: string): ScanTarget {
+  if (!/^172\.29\.83\.(?:[2-9]|1[0-4])$/.test(address)) throw new ApiError(409, "DEMO_ADDRESS_UNKNOWN");
+  const { hostname, port } = new URL(demoTarget);
+  return { host: hostname, port: Number(port), addresses: [address] };
+}
 
 // The kernel firewall inside ZAP's network namespace. ZAP has no capability to change it.
 // Only fixed commands of the guard image run here, without a shell. See egress-guard in the

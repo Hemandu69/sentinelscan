@@ -26,7 +26,6 @@ function setup() {
   const updateReceipt = vi.fn(() => true);
   const state = {
     authorized: true,
-    target,
     exists: true,
     startedAt: null as Date | null,
     status: "PENDING",
@@ -44,7 +43,7 @@ function setup() {
           const sql = parts.join("?");
           if (sql.includes("FROM assessment_runs")) return draft.runs;
           if (sql.includes("AS eligible"))
-            return [{ status: draft.status, target: state.target, eligible: draft.authorized }];
+            return [{ status: draft.status, eligible: draft.authorized }];
           if (sql.includes("target_url_snapshot FROM assessments"))
             return [{ status: draft.status, target_url_snapshot: target }];
           if (sql.startsWith("SELECT status FROM assessments"))
@@ -107,7 +106,7 @@ function setup() {
     state: "RUNNING",
     progress: 20,
     reportedOrigin: "http://juice-shop:3000",
-    exactRootUrl: true,
+    exactDemoUrl: true,
     outcome: "RUNNING",
     requests: 5,
     alerts: 0,
@@ -130,7 +129,7 @@ function setup() {
         },
       ],
     })),
-    inspectScope: async () => ({ evidence: "OBSERVED_TARGET_ORIGIN", count: 5 }),
+    inspectDemoScope: async () => ({ evidence: "OBSERVED_TARGET_ORIGIN", count: 5 }),
     readActiveMessages: vi.fn(async () => ({
       evidence: "OBSERVED_TARGET_ORIGIN",
       count: 5,
@@ -139,6 +138,7 @@ function setup() {
     mentionsCredential: () => false,
   };
   const stamp = vi.fn(async () => session);
+  let records: ReturnType<typeof registerRunRecords>;
   const open = () => {
     const app = Fastify();
     app.setErrorHandler((err, req, reply) =>
@@ -146,7 +146,7 @@ function setup() {
         .code(err instanceof ApiError ? err.status : 500)
         .send({ code: (err as Error).message, ...(err instanceof ApiError && err.reasons.length ? { reasons: err.reasons } : {}) }),
     );
-    registerRunRecords(
+    records = registerRunRecords(
       app,
       db as unknown as PrismaClient,
       zap as unknown as ZapClient,
@@ -166,14 +166,18 @@ function setup() {
       url: "/api/v1/assessments/" + id + "/" + name,
       payload,
     });
-  const bind = (kind: string) =>
-    call("zap-association", {
-      kind,
-      scanId: "0",
-      sessionKey: session,
-      target,
-      confirmedOperatorReceipt: true,
-    });
+  // Receipts have no HTTP route. Only the orchestrator calls this operation.
+  const receipt = async (change: object = {}) => {
+    const input = { kind: "spider" as const, scanId: "0", sessionKey: session, ...change };
+    try {
+      await records.associate(id, input);
+      return { statusCode: 200, json: () => ({}) as { code?: string } };
+    } catch (error) {
+      if (!(error instanceof ApiError)) throw error;
+      return { statusCode: error.status, json: () => ({ code: error.message }) };
+    }
+  };
+  const bind = (kind: string) => receipt({ kind });
   return {
     f,
     state,
@@ -182,6 +186,7 @@ function setup() {
     row,
     stamp,
     bind,
+    receipt,
     call,
     get: (path: string) => app.inject(path),
     close: () => app.close(),
@@ -391,15 +396,7 @@ test("cancellation needs explicit confirmation, an existing assessment and an op
 });
 test("a conflicting receipt never replaces the stored one", async () => {
   const f = setup();
-  const bind = (change: object) =>
-    f.call("zap-association", {
-      kind: "spider",
-      scanId: "0",
-      sessionKey: session,
-      target,
-      confirmedOperatorReceipt: true,
-      ...change,
-    });
+  const bind = f.receipt;
   try {
     await f.bind("spider");
     const stored = structuredClone(f.state.runs);
@@ -416,29 +413,11 @@ test("a conflicting receipt never replaces the stored one", async () => {
     await f.close();
   }
 });
-test("receipt input is strict", async () => {
+test("no HTTP route accepts a receipt", async () => {
   const f = setup();
-  const valid = {
-    kind: "spider",
-    scanId: "0",
-    sessionKey: session,
-    target,
-    confirmedOperatorReceipt: true,
-  };
   try {
-    for (const change of [
-      { confirmedOperatorReceipt: false },
-      { target: "http://127.0.0.1:3001/" },
-      { sessionKey: "short" },
-      { scanId: "-1" },
-      { kind: "ajax" },
-      { extra: 1 },
-    ])
-      expect(
-        (await f.call("zap-association", { ...valid, ...change })).statusCode,
-      ).not.toBe(200);
+    expect((await f.call("zap-association", { kind: "spider", scanId: "0", sessionKey: session })).statusCode).toBe(404);
     expect(f.state.runs).toHaveLength(0);
-    expect(f.stamp).not.toHaveBeenCalled();
   } finally {
     await f.close();
   }
@@ -525,18 +504,6 @@ test("a run that stops being listed as RUNNING shows an unknown outcome and stay
     expect((await f.call("zap-import")).json().code).toBe(
       "ZAP_SUCCESS_OR_SCOPE_UNVERIFIED",
     );
-  } finally {
-    await f.close();
-  }
-});
-test("receipts entered by hand are refused for any website but the demo", async () => {
-  const f = setup();
-  try {
-    f.state.target = "https://www.hemandu.com/";
-    const response = await f.bind("spider");
-    expect([response.statusCode, response.json().code]).toEqual([403, "ASSESSMENT_SCOPE_NOT_AUTHORIZED"]);
-    expect(f.stamp).not.toHaveBeenCalled();
-    expect(f.state.runs).toEqual([]);
   } finally {
     await f.close();
   }

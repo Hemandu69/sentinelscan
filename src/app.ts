@@ -25,7 +25,6 @@ import { ApiError } from "./lib/errors.ts";
 import { type Resolve } from "./lib/security/destination.ts";
 import { confirmations } from "./modules/assessments/consent.ts";
 import { registerTargets } from "./modules/targets/routes.ts";
-import { registerObservation } from "./modules/assessments/observation.ts";
 import { registerAssessments } from "./modules/assessments/routes.ts";
 import { registerRunRecords } from "./modules/assessments/run-records.ts";
 import { registerRecords } from "./modules/assessments/records.ts";
@@ -98,7 +97,7 @@ export function buildApp(
   registerHealth(app, db);
   registerDashboard(app, db);
   registerZap(app, zap);
-  registerTargets(app, db, consent);
+  registerTargets(app, db, consent, resolve);
   registerAssessments(app, db, consent, resolve);
   registerRecords(app, db);
   registerIssues(app, db, ai);
@@ -118,11 +117,9 @@ export function buildApp(
     readLog: readContainerLog,
     resources: dockerResources,
     egress: createEgress(),
-    resolve,
   });
   registerRunRecords(app, db, zap, getSession, readContainerLog, runs, scans.isActive);
   registerScans(app, db, consent, scans, resolve);
   registerComparison(app, db);
-  registerObservation(app, db, zap);
   return app;
 }

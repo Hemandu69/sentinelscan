@@ -2,7 +2,6 @@ import type { FastifyInstance } from "fastify";
 import type { PrismaClient } from "@prisma/client";
 import { z } from "zod";
 import { ApiError } from "../../lib/errors.ts";
-import { safety } from "../scans/exclusions.ts";
 import type { Facts } from "../../integrations/zap/evidence.ts";
 
 const page = z.strictObject({
@@ -46,8 +45,6 @@ function assessment({ target, _count, errorCode, ...row }: AssessmentRow) {
     SCAN_STOPPED_TIME: "The scan was stopped because it exceeded its time limit.",
     SCAN_STOPPED_EGRESS:
       "The scan was stopped because the outbound firewall was no longer in place.",
-    SCAN_TARGET_INVALID:
-      "The website no longer passed validation, so the scan was not continued. No results were imported.",
     PROVIDER_LOST:
       "Contact with ZAP was lost during the scan. Its outcome is unknown.",
     SPIDER_UNVERIFIED:
@@ -84,7 +81,6 @@ export function summarizeEvidence(
     contract: facts.contract,
     collectedAt: active.collectedAt,
     digest: active.factsDigest,
-    exclusions: safety(facts.target).description,
     spider: {
       scanId: spider.run.scanId,
       startedAt: facts.log.spider!.startedAt,

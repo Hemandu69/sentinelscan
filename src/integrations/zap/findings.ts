@@ -20,7 +20,6 @@ export const alertSchema = z
     wascid: id,
   })
   .refine((alert) => Boolean(alert.name?.trim() || alert.alert?.trim()));
-export const pageSchema = z.object({ alerts: z.array(alertSchema).max(100) });
 function taxonomy(value: string | number | null | undefined) {
   const number = Number(value);
   return /^\d+$/.test(String(value)) &&

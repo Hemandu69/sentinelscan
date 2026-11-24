@@ -1,6 +1,7 @@
 import { expect, test, vi } from "vitest";
 import { PrismaClient } from "@prisma/client";
 import { buildApp } from "../src/app.ts";
+import { normalize } from "../src/integrations/zap/findings.ts";
 import { createZapClient } from "../src/integrations/zap/client.ts";
 const key = "fixture-secret";
 const reply = (body: unknown) =>
@@ -35,7 +36,7 @@ test.each([
       key,
       500,
       async () => new Response(body, { status }),
-    ).alerts(),
+    ).version(),
   ).rejects.toThrow(code);
 });
 test("connection refused", async () => {
@@ -60,7 +61,7 @@ test("timeout covers stalled response body", async () => {
         }),
       ),
   );
-  await expect(client.alerts()).rejects.toThrow("ZAP_TIMEOUT");
+  await expect(client.version()).rejects.toThrow("ZAP_TIMEOUT");
 });
 test.each([true, false])(
   "bounds alerts with declared size %s",
@@ -73,13 +74,12 @@ test.each([true, false])(
           headers: declared ? { "content-length": "1048577" } : {},
         }),
     );
-    await expect(client.alerts()).rejects.toThrow("ZAP_RESPONSE_TOO_LARGE");
+    await expect(client.version()).rejects.toThrow("ZAP_RESPONSE_TOO_LARGE");
   },
 );
-test("empty alerts and sparse alerts", async () => {
-  expect(await reply({ alerts: [] }).alerts()).toEqual([]);
+test("sparse alerts", () => {
   expect(
-    (await reply({ alerts: [{ alert: "Example" }] }).alerts())[0],
+    normalize({ alert: "Example" }),
   ).toMatchObject({
     sourceSeverity: null,
     normalizedSeverity: null,
@@ -89,7 +89,7 @@ test("empty alerts and sparse alerts", async () => {
     references: [],
   });
 });
-test("normalizes populated alerts, strips credentials and bounds evidence", async () => {
+test("normalizes populated alerts, strips credentials and bounds evidence", () => {
   const alert = {
     alert: "Example",
     pluginId: "123",
@@ -105,8 +105,7 @@ test("normalizes populated alerts, strips credentials and bounds evidence", asyn
     cweid: "42",
     wascid: "-1",
   };
-  expect(await reply({ alerts: [alert] }).alerts()).toEqual([
-    {
+  expect(normalize(alert)).toEqual({
       name: "Example",
       sourceRuleId: "123",
       sourceSeverity: "Medium",
@@ -121,11 +120,10 @@ test("normalizes populated alerts, strips credentials and bounds evidence", asyn
       references: ["https://example.org/docs"],
       cweId: 42,
       wascId: null,
-    },
-  ]);
+    });
 });
-test("provider credential echoed inside alert is suppressed", async () => {
-  await expect(reply({ alerts: [{ name: key }] }).alerts()).rejects.toThrow(
+test("a provider answer that echoes the credential is suppressed", async () => {
+  await expect(reply({ scans: [{ id: "0", state: key }] }).inspectRuns("spider")).rejects.toThrow(
     "ZAP_MALFORMED_RESPONSE",
   );
 });
@@ -152,11 +150,7 @@ test("Fastify surfaces sanitized provider errors", async () => {
     createZapClient(key, 100, async () => new Response(key, { status: 403 })),
   );
   try {
-    for (const path of [
-      "/health/zap",
-      "/api/v1/integrations/zap/status",
-      "/api/v1/integrations/zap/version",
-    ]) {
+    for (const path of ["/health/zap"]) {
       const res = await app.inject({
         method: "GET",
         url: path,
@@ -167,51 +161,6 @@ test("Fastify surfaces sanitized provider errors", async () => {
         error: "ZAP_INVALID_CREDENTIALS",
         requestId: expect.any(String),
       });
-    }
-  } finally {
-    await app.close();
-    await db.$disconnect();
-  }
-});
-test("Fastify exposes version, health, paged findings and existing progress", async () => {
-  const db = new PrismaClient();
-  const zap = createZapClient(key, 1000, async (input) => {
-    const url = new URL(String(input));
-    if (url.pathname === "/JSON/core/view/version/")
-      return Response.json({ version: "2.17.0" });
-    if (
-      url.pathname === "/JSON/alert/view/alerts/" &&
-      url.search === "?start=3&count=1"
-    )
-      return Response.json({ alerts: [] });
-    if (
-      url.pathname === "/JSON/ascan/view/status/" &&
-      url.search === "?scanId=4"
-    )
-      return Response.json({ status: "75" });
-    return new Response(null, { status: 404 });
-  });
-  const app = buildApp(db, undefined, undefined, zap);
-  const base = "/api/v1/integrations/zap";
-  const expected = new Map<string, object>([
-    ["/health/zap", { available: true, version: "2.17.0" }],
-    [base + "/status", { available: true, version: "2.17.0" }],
-    [base + "/version", { version: "2.17.0" }],
-    [base + "/alerts?start=3&count=1", { start: 3, count: 1, findings: [] }],
-    [
-      base + "/progress/active/4",
-      { kind: "active", scanId: "4", progress: 75 },
-    ],
-  ]);
-  try {
-    for (const [url, body] of expected) {
-      const result = await app.inject({
-        method: "GET",
-        url,
-        headers: { host: "127.0.0.1:4000" },
-      });
-      expect(result.statusCode).toBe(200);
-      expect(result.json()).toEqual(body);
     }
   } finally {
     await app.close();
@@ -238,7 +187,7 @@ test("compatibility probe reads existing run metadata without printing target va
         state: "FINISHED",
         progress: null,
         reportedOrigin: "https://fixture.invalid",
-        exactRootUrl: false,
+        exactDemoUrl: false,
         requests: null,
         alerts: null,
         outcome: "UNKNOWN",
@@ -325,7 +274,7 @@ test.each([
 ] as [string[], string][])(
   "spider scope from run-specific results %j",
   async (results, evidence) => {
-    expect(await reply({ results }).inspectScope("spider", "0", "http://juice-shop:3000/")).toEqual({
+    expect(await reply({ results }).inspectDemoScope("spider", "0")).toEqual({
       count: results.length,
       evidence,
     });
@@ -354,7 +303,7 @@ test.each([
       expect(url.searchParams.get("id")).toBe("41");
       return Response.json({ message: { id: "41", requestHeader } });
     });
-    expect(await client.inspectScope("active", "0", "http://juice-shop:3000/")).toEqual({
+    expect(await client.inspectDemoScope("active", "0")).toEqual({
       count: 1,
       evidence,
     });
@@ -380,18 +329,18 @@ function messages(count: number, header = inScope, change = false) {
 }
 test("active scope reads every attributed message beyond the former limit exactly once", async () => {
   const { client, read } = messages(1500);
-  expect(await client.inspectScope("active", "0", "http://juice-shop:3000/")).toEqual({ evidence: "OBSERVED_TARGET_ORIGIN", count: 1500 });
+  expect(await client.inspectDemoScope("active", "0")).toEqual({ evidence: "OBSERVED_TARGET_ORIGIN", count: 1500 });
   expect(read).toHaveLength(1500);
   expect(new Set(read).size).toBe(1500);
 });
 test("one message outside the target decides the whole scan", async () => {
   const { client } = messages(400, (id) => `GET http://${id === "399" ? "elsewhere.invalid" : "juice-shop:3000"}/ HTTP/1.1`);
-  expect((await client.inspectScope("active", "0", "http://juice-shop:3000/")).evidence).toBe("OUT_OF_SCOPE");
+  expect((await client.inspectDemoScope("active", "0")).evidence).toBe("OUT_OF_SCOPE");
 });
 test("a failed read or a changed list never yields partial scope", async () => {
-  await expect(messages(400, (id) => (id === "200" ? "" : "GET http://juice-shop:3000/ HTTP/1.1")).client.inspectScope("active", "0", "http://juice-shop:3000/")).rejects.toThrow("ZAP_UNAVAILABLE");
-  await expect(messages(5, undefined, true).client.inspectScope("active", "0", "http://juice-shop:3000/")).rejects.toThrow("OBSERVATION_CHANGED");
-  await expect(messages(16001).client.inspectScope("active", "0", "http://juice-shop:3000/")).rejects.toThrow("ZAP_MALFORMED_RESPONSE");
+  await expect(messages(400, (id) => (id === "200" ? "" : "GET http://juice-shop:3000/ HTTP/1.1")).client.inspectDemoScope("active", "0")).rejects.toThrow("ZAP_UNAVAILABLE");
+  await expect(messages(5, undefined, true).client.inspectDemoScope("active", "0")).rejects.toThrow("OBSERVATION_CHANGED");
+  await expect(messages(16001).client.inspectDemoScope("active", "0")).rejects.toThrow("ZAP_MALFORMED_RESPONSE");
 });
 const rule = (status: string) => ({ Plugin: ["Rule", "1", "release", status, "5", "1", "0"] });
 test("scan progress reports host and rule counts without an outcome", async () => {
@@ -431,10 +380,10 @@ test("active messages keep only origin, differing hosts and times", async () => 
       },
     });
   });
-  const result = await client.readActiveMessages("0", "http://juice-shop:3000/");
+  const result = await client.readActiveMessages("0");
   expect(result).toEqual({ evidence: "OBSERVED_TARGET_ORIGIN", count: 2, mismatches: [{ messageId: "1", host: "169.254.169.254", sentAt: 1795502186864 }] });
   expect(JSON.stringify(result)).not.toMatch(/secret|private/);
-  expect(await client.inspectScope("active", "0", "http://juice-shop:3000/")).toEqual({ evidence: "OUT_OF_SCOPE", count: 2 });
+  expect(await client.inspectDemoScope("active", "0")).toEqual({ evidence: "OUT_OF_SCOPE", count: 2 });
 });
 test("scan progress keeps the two contract rules and the request total", async () => {
   const plugin = (id: string, requests: string) => ({ Plugin: ["Name " + id, id, "release", "Complete", "5", requests, "0"] });

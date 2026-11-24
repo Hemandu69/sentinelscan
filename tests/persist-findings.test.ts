@@ -1,7 +1,12 @@
 import type { PrismaClient } from "@prisma/client";
 import { expect, test, vi } from "vitest";
 import { normalize } from "../src/integrations/zap/findings.ts";
-import { persistFinalFindings } from "../src/modules/assessments/persist-findings.ts";
+import { persistFinalFindingsTx } from "../src/modules/assessments/persist-findings.ts";
+const persistFinalFindings = (
+  db: PrismaClient,
+  id: string,
+  findings: Parameters<typeof persistFinalFindingsTx>[2],
+) => db.$transaction((tx) => persistFinalFindingsTx(tx, id, findings));
 
 const fixture = normalize({
   name: "Fixture",

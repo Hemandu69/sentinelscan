@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { PrismaClient, Prisma } from "@prisma/client";
+import type { Prisma } from "@prisma/client";
 import type { normalize } from "../../integrations/zap/findings.ts";
 import { ApiError } from "../../lib/errors.ts";
 
@@ -7,16 +7,6 @@ type Finding = ReturnType<typeof normalize>;
 
 // The caller supplies the complete, assessment-specific result set after verifying
 // provider completion. A page from the global alerts view is insufficient.
-export async function persistFinalFindings(
-  db: PrismaClient,
-  assessmentId: string,
-  findings: readonly Finding[],
-) {
-  return db.$transaction((tx) =>
-    persistFinalFindingsTx(tx, assessmentId, findings),
-  );
-}
-
 export async function persistFinalFindingsTx(
   tx: Prisma.TransactionClient,
   assessmentId: string,

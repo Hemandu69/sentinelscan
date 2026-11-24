@@ -4,8 +4,10 @@ import { parseEnv } from "node:util";
 import { z } from "zod";
 import { ApiError } from "../../lib/errors.ts";
 import { hostHeaderRule, rawSocketRule, type HostMismatch } from "./exceptions.ts";
-import { alertSchema, normalize, pageSchema } from "./findings.ts";
+import { demoTarget } from "../../lib/security/destination.ts";
+import { alertSchema, normalize } from "./findings.ts";
 
+const demoOrigin = new URL(demoTarget).origin;
 const limit = 1024 * 1024;
 const progressSchema = z
   .union([z.string().regex(/^\d{1,3}$/), z.number()])
@@ -21,19 +23,6 @@ const malformed = () => new ApiError(502, "ZAP_MALFORMED_RESPONSE");
 const oversized = () => new ApiError(502, "ZAP_RESPONSE_TOO_LARGE");
 const denied = () => new ApiError(502, "ZAP_INVALID_CREDENTIALS");
 const unavailable = () => new ApiError(503, "ZAP_UNAVAILABLE");
-// A scan covers one whole origin, named by its canonical root address.
-function rootUrl(value: string) {
-  const url = URL.canParse(value) ? new URL(value) : null;
-  if (
-    !url ||
-    !["http:", "https:"].includes(url.protocol) ||
-    url.username ||
-    url.password ||
-    value !== url.origin + "/"
-  )
-    throw new ApiError(422, "DESTINATION_PROHIBITED");
-  return url;
-}
 async function readJson(response: Response, limit: number) {
   if (Number(response.headers.get("content-length")) > limit) throw oversized();
   if (!response.body) throw malformed();
@@ -128,8 +117,8 @@ export function createZapClient(
   }
   // Reads every message attributed to one active scan, or none. Only the request URL's
   // origin, the Host header and the sending time are kept.
-  async function readActiveMessages(scanId: string, authorizedUrl: string) {
-    const { origin: target, host: targetHost } = rootUrl(authorizedUrl);
+  async function readActiveMessages(scanId: string) {
+    const target = demoOrigin;
     const messageIds = async () =>
       (
         await view(
@@ -183,7 +172,7 @@ export function createZapClient(
         .filter((line) => /^host:/i.test(line))
         .map((line) => line.slice(5).trim().toLowerCase());
       if (hosts.length > 1) unknown++;
-      else if (hosts.length && hosts[0] !== targetHost)
+      else if (hosts.length && hosts[0] !== new URL(demoTarget).host)
         mismatches.push({
           messageId: id,
           host: hosts[0].slice(0, 253),
@@ -236,7 +225,7 @@ export function createZapClient(
     .transform(Number)
     .pipe(z.number().int().nonnegative());
   return {
-    // The only state-changing provider operations. Options are fixed here, and the target is a validated root address.
+    // The only state-changing provider operations. Targets and options are fixed here.
     async newSession(name: string) {
       z.string().regex(/^sentinelscan-[a-z0-9-]{1,60}$/).parse(name);
       await view("core/action/newSession", z.object({ Result: z.literal("OK") }), {
@@ -244,27 +233,24 @@ export function createZapClient(
         overwrite: "false",
       });
     },
-    startSpider: (target: string) =>
-      started("spider/action/scan", { url: rootUrl(target).href, recurse: "true" }),
-    startActive: (target: string) =>
-      started("ascan/action/scan", { url: rootUrl(target).href, recurse: "true" }),
-    // Sets the safety options of the next scan and proves that ZAP accepted exactly them.
-    async configureScan(options: { exclusions: readonly string[]; postForms: boolean }) {
+    startSpider: () =>
+      started("spider/action/scan", { url: demoTarget, recurse: "true" }),
+    startActive: () =>
+      started("ascan/action/scan", { url: demoTarget, recurse: "true" }),
+    // Restores the options that the evidence was verified with, and proves it.
+    async resetScanOptions() {
       const ok = z.object({ Result: z.literal("OK") });
       for (const component of ["spider", "ascan"]) {
         await view(component + "/action/clearExcludedFromScan", ok);
-        for (const regex of options.exclusions)
-          await view(component + "/action/excludeFromScan", ok, { regex });
         const { excludedFromScan } = await view(
           component + "/view/excludedFromScan",
           z.object({ excludedFromScan: z.array(z.string()).max(64) }),
         );
-        if (JSON.stringify([...excludedFromScan].sort()) !== JSON.stringify([...options.exclusions].sort()))
-          throw new ApiError(409, "SCAN_EXCLUSIONS_UNVERIFIED");
+        if (excludedFromScan.length) throw new ApiError(409, "SCAN_POLICY_CHANGED");
       }
-      await view("spider/action/setOptionPostForm", ok, { Boolean: String(options.postForms) });
+      await view("spider/action/setOptionPostForm", ok, { Boolean: "true" });
       const { PostForm } = await view("spider/view/optionPostForm", z.object({ PostForm: z.string() }));
-      if (PostForm !== String(options.postForms)) throw new ApiError(409, "SCAN_EXCLUSIONS_UNVERIFIED");
+      if (PostForm !== "true") throw new ApiError(409, "SCAN_POLICY_CHANGED");
     },
     async stopScan(kind: "spider" | "active", scanId: string) {
       z.string().regex(/^\d{1,12}$/).parse(scanId);
@@ -339,13 +325,10 @@ export function createZapClient(
           ])
           .safeParse(String(row.state ?? "").toUpperCase());
         let reportedOrigin: string | null = null;
-        let exactRootUrl = false;
         if (typeof row.url === "string" && URL.canParse(row.url)) {
           const url = new URL(row.url);
-          if (["http:", "https:"].includes(url.protocol)) {
+          if (["http:", "https:"].includes(url.protocol))
             reportedOrigin = url.origin;
-            exactRootUrl = row.url === url.origin || row.url === url.origin + "/";
-          }
         }
         return {
           id: id.success ? id.data : null,
@@ -355,7 +338,8 @@ export function createZapClient(
               : (progressSchema.safeParse(row.progress).data ?? null),
           reportedOrigin,
           outcome: inventoryOutcome(row.state),
-          exactRootUrl,
+          exactDemoUrl:
+            row.url === demoTarget || row.url === demoOrigin,
           state: state.success ? state.data : null,
           requests: total(row.reqCount),
           alerts: total(row.alertCount),
@@ -370,11 +354,11 @@ export function createZapClient(
     },
     // Request history can corroborate destination independently of alert count.
     // Summarize locally so URLs, query strings, headers and bodies stay private.
-    async inspectScope(kind: "spider" | "active", scanId: string, authorizedUrl: string) {
+    async inspectDemoScope(kind: "spider" | "active", scanId: string) {
       z.string()
         .regex(/^\d{1,12}$/)
         .parse(scanId);
-      const target = rootUrl(authorizedUrl).origin;
+      const target = demoOrigin;
       function classify(urls: string[]) {
         if (!urls.length) return { evidence: "EMPTY", count: 0 };
         let unknown = false;
@@ -401,7 +385,7 @@ export function createZapClient(
         return classify(results);
       }
       // Without contract reconciliation any differing Host header stays out of scope.
-      const { evidence, count, mismatches } = await readActiveMessages(scanId, authorizedUrl);
+      const { evidence, count, mismatches } = await readActiveMessages(scanId);
       return {
         evidence: mismatches.length ? "OUT_OF_SCOPE" : evidence,
         count,
@@ -533,16 +517,6 @@ export function createZapClient(
           }),
         )
       ).version;
-    },
-    async alerts(start = 0, count = 50) {
-      z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).parse(start);
-      z.number().int().min(1).max(100).parse(count);
-      const page = await view("alert/view/alerts", pageSchema, {
-        start: String(start),
-        count: String(count),
-      });
-      if (page.alerts.length > count) throw malformed();
-      return page.alerts.map(normalize);
     },
     async progress(kind: "spider" | "active", scanId: string) {
       z.string()
