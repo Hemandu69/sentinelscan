@@ -11,7 +11,7 @@ export type Site = {
 export function timeoutFor(path: string) {
   if (path.endsWith("/zap-import")) return 900000;
   if (path.endsWith("/reports")) return 90000;
-  if (path === "/api/v1/scans" || path === "/api/v1/scans/readiness") return 90000;
+  if (path === "/api/v1/scans" || path.endsWith("/readiness") || path.endsWith("/eligibility")) return 90000;
   if (path.endsWith("/scan") || path.endsWith("/scan/cancel")) return 20000;
   // Two attempts, each with one transport retry on the server.
   if (/\/issues\/[a-f0-9]{64}\/analysis$/.test(path)) return 600000;
@@ -212,7 +212,6 @@ async function open(
         "The report did not match the recorded findings, so no PDF was created.",
       REPORT_RENDER_FAILED: "The PDF could not be generated.",
       REPORT_STORAGE_FAILED: "The PDF could not be stored.",
-      SCAN_TARGET_NOT_APPROVED: "Scanning is not approved for this website.",
       SCAN_ALREADY_RUNNING: "Another scan is already running.",
       SCAN_NOT_READY: "The scan cannot start yet. Nothing was changed.",
       SCAN_NOT_RUNNING: "No scan is running for this assessment.",

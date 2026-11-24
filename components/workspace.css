@@ -216,3 +216,7 @@
     font-size: 15px;
   }
 }
+.scan-scope {
+  margin: 0 0 16px;
+  max-width: 74ch;
+}

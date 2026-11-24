@@ -7,11 +7,13 @@ import { launched, readiness, readinessMessage, type scanPolicy } from "../lib/s
 export function StartScanDialog({
   targetId,
   policy,
+  safety,
   close,
   started,
 }: {
   targetId: string;
   policy: z.infer<typeof scanPolicy>;
+  safety: string[];
   close: () => void;
   started: (assessmentId: string) => void;
 }) {
@@ -34,7 +36,7 @@ export function StartScanDialog({
     const control = new AbortController();
     Promise.all([
       fetchWebsite(targetId, control.signal),
-      request("/api/v1/scans/readiness", control.signal).then((body) => readiness.parse(body)),
+      request(`/api/v1/targets/${encodeURIComponent(targetId)}/readiness`, control.signal).then((body) => readiness.parse(body)),
     ])
       .then(([detail, value]) => {
         if (control.signal.aborted) return;
@@ -124,7 +126,7 @@ export function StartScanDialog({
               </span>
             </label>
             <ul className="config-list">
-              {policy.configuration.details.map((text) => (
+              {[...policy.configuration.details, ...safety].map((text) => (
                 <li key={text}>{text}</li>
               ))}
             </ul>
@@ -133,6 +135,11 @@ export function StartScanDialog({
             After you start: SentinelScan finds pages, tests them, verifies the evidence and imports the
             results. This usually takes about six minutes, and you can stop it. Starting ends the
             scanner&apos;s previous session.
+          </p>
+          <p>
+            Your confirmation covers every page and endpoint of this exact address that the scan discovers.
+            Other domains and subdomains are out of scope. Testing sends many unusual requests, so use a
+            quiet time, keep a backup, and make sure that the hosting provider allows it.
           </p>
           <label className="consent-check">
             <input

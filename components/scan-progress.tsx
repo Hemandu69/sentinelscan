@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { describeError, request } from "../lib/api";
 import { statusLabel } from "../lib/records";
-import { isEnded, measured, outcomeText, scanState, stepState, steps, type ScanState } from "../lib/scans";
+import { isEnded, reasonText, measured, outcomeText, scanState, stepState, steps, type ScanState } from "../lib/scans";
 
 export function ScanProgress({ id, onChanged }: { id: string; onChanged: () => void }) {
   const base = "/api/v1/assessments/" + encodeURIComponent(id);
@@ -109,7 +109,9 @@ export function ScanProgress({ id, onChanged }: { id: string; onChanged: () => v
           Scanner memory {state.memoryPercent}% of its limit. The scan stops above 90%.
         </p>
       )}
-      {!live && state.reasons.length > 0 && <p>Details: {state.reasons.join(", ")}</p>}
+      {!live && state.reasons.length > 0 && (
+        <p>Details: {state.reasons.map(reasonText).join(" ")}</p>
+      )}
       {actionError && <p role="alert">{actionError}</p>}
       {live &&
         !state.cancelRequested &&

@@ -21,6 +21,7 @@ export const runEvidence = z.object({
   contract: z.string(),
   collectedAt: when,
   digest: z.string().regex(/^[a-f0-9]{64}$/),
+  exclusions: z.array(z.string()).default([]),
   spider: z.object({ scanId: z.string(), startedAt: when, endedAt: when, results: count }),
   active: z.object({
     scanId: z.string(),

@@ -6,7 +6,7 @@ import { z } from "zod";
 import { describeError, readSites, request, type Site } from "../lib/api";
 import { assessments, statusLabel } from "../lib/records";
 import { summarize } from "../lib/issues";
-import { scanPolicy } from "../lib/scans";
+import { eligibility, eligibilityTitle, readinessMessage, scanPolicy, type Eligibility } from "../lib/scans";
 import { Navigation } from "./navigation";
 import { AnalysisView, TechnicalView, useIssues } from "./issues";
 import { AssessmentComparison } from "./comparison";
@@ -103,6 +103,21 @@ export function Workspace({ id, section, assessment }: { id: string; section: Se
   const [result, setResult] = useState<{ data?: Data; error?: string }>();
   const [watched, watch] = useState<string>();
   const [dialog, setDialog] = useState<"scan" | "record" | null>(null);
+  const [scope, setScope] = useState<{ data?: Eligibility; error?: string }>();
+  const [scopeRevision, recheck] = useState(0);
+  useEffect(() => {
+    if (section !== "overview" && section !== "scans") return;
+    const control = new AbortController();
+    request(`/api/v1/targets/${encodeURIComponent(id)}/eligibility`, control.signal)
+      .then((body) => eligibility.parse(body))
+      .then((value) => {
+        if (!control.signal.aborted) setScope({ data: value });
+      })
+      .catch((cause: unknown) => {
+        if (!control.signal.aborted) setScope({ error: describeError(cause) });
+      });
+    return () => control.abort();
+  }, [id, section, scopeRevision]);
   const reload = useCallback(() => setRevision((n) => n + 1), []);
   useEffect(() => {
     const control = new AbortController();
@@ -129,20 +144,53 @@ export function Workspace({ id, section, assessment }: { id: string; section: Se
   const requested = assessment ? rows.find((row) => row.id === assessment) : undefined;
   const selected = assessment ? completed.find((row) => row.id === assessment) : completed[0];
   const latest = rows[0];
-  const approved = Boolean(site && data?.policy.approvedTargets.includes(site.canonicalUrl));
+  const eligible = Boolean(site && scope?.data?.state === "ELIGIBLE" && scope.data.url === site.canonicalUrl);
   const label = sections.find(([key]) => key === section)![1];
   const open = (row?: Row) => row && !["COMPLETED", "FAILED", "CANCELLED", "PENDING"].includes(row.status);
   const followed = section === "scans" ? (requested ?? rows.find((row) => row.id === watched) ?? (open(latest) ? latest : undefined)) : undefined;
-  const start = approved && (
+  const start = eligible && (
     <button className="primary" onClick={() => setDialog("scan")}>
       Start New Security Scan
     </button>
   );
-  const unavailable = site && !approved && (
-    <p className="not-ready">
-      Scanning is not available for this website. Only {data!.policy.approvedTargets.join(", ")} is approved
-      for scans. Registration and records still work.
-    </p>
+  const state = scope?.data?.state;
+  const scanScope = site && (
+    <div className={"scan-scope" + (scope && !eligible ? " not-ready" : "")} role="status">
+      {!scope ? (
+        <p>Checking whether this website can be scanned…</p>
+      ) : scope.error || (state === "ELIGIBLE" && !eligible) ? (
+        <p>
+          <strong>Scan unavailable.</strong> The check could not be completed. {scope.error}
+        </p>
+      ) : eligible ? (
+        <p>
+          <strong>{eligibilityTitle.ELIGIBLE}</strong> Authorization required: you confirm permission before
+          every scan. Validated addresses: {scope.data!.addresses.join(", ")}.
+        </p>
+      ) : (
+        <>
+          <p>
+            <strong>{eligibilityTitle[state!]}</strong> No scan can start.
+          </p>
+          <ul>
+            {scope.data!.reasons.map((reason) => (
+              <li key={reason}>{readinessMessage(reason)}</li>
+            ))}
+          </ul>
+        </>
+      )}
+      {scope && !eligible && (
+        <button
+          className="refresh"
+          onClick={() => {
+            setScope(undefined);
+            recheck((n) => n + 1);
+          }}
+        >
+          Check again
+        </button>
+      )}
+    </div>
   );
   const picker = completed.length > 0 && (
     <label className="picker">
@@ -173,7 +221,7 @@ export function Workspace({ id, section, assessment }: { id: string; section: Se
       {selected ? (
         content(selected)
       ) : (
-        !assessment && <p>No completed assessment yet. {approved && "Start a security scan to get results."}</p>
+        !assessment && <p>No completed assessment yet. {"Start a security scan to get results."}</p>
       )}
     </>
   );
@@ -226,7 +274,7 @@ export function Workspace({ id, section, assessment }: { id: string; section: Se
           <>
             {section === "overview" && (
               <>
-                {unavailable}
+                {scanScope}
                 <div className="record">
                   <section aria-labelledby="latest-title">
                     <h2 id="latest-title">Latest result</h2>
@@ -267,7 +315,7 @@ export function Workspace({ id, section, assessment }: { id: string; section: Se
             {section === "scans" && (
               <>
                 <h2>Security Scans</h2>
-                {unavailable}
+                {scanScope}
                 {start && <p>{start}</p>}
                 {assessment && !requested && <p role="status">That assessment is not among the latest 25 of this website.</p>}
                 {followed && (
@@ -335,6 +383,7 @@ export function Workspace({ id, section, assessment }: { id: string; section: Se
           <StartScanDialog
             targetId={id}
             policy={data.policy}
+            safety={scope?.data?.safety ?? []}
             close={() => setDialog(null)}
             started={(newId) => {
               setDialog(null);

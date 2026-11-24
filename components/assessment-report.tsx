@@ -188,6 +188,9 @@ export function AssessmentReport({ id }: { id: string }) {
                 DOM-based XSS testing (ZAP rule 40026) is excluded from the
                 approved scanner configuration.
               </li>
+              {report.assessment.evidence?.exclusions.map((text) => (
+                <li key={text}>{text}</li>
+              ))}
               <li>
                 Findings come only from alerts that ZAP attributed to this
                 active scan. Passive alerts are not included. ZAP records at

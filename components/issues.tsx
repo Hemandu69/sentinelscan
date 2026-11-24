@@ -562,6 +562,7 @@ export function SummaryText({
       <ul>
         <li>DOM-based XSS (ZAP rule 40026) is excluded from the approved configuration.</li>
         <li>Passive alerts, such as missing security headers, are not imported.</li>
+        {evidence?.exclusions.map((text) => <li key={text}>{text}</li>)}
         {evidence &&
           evidence.active.skippedRules.map((reason) => <li key={reason}>One rule was skipped: {reason}.</li>)}
         <li>Pages that need a login, and areas the spider did not reach, were not tested.</li>

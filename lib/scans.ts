@@ -38,12 +38,26 @@ export const scanState = z
   .refine((row) => row.tracked === (row.stage !== null));
 export type ScanState = z.infer<typeof scanState>;
 export const scanPolicy = z.object({
-  approvedTargets: z.array(z.string()),
   configuration: z.object({ id: z.string(), name: z.string(), details: z.array(z.string()) }),
 });
 export const readiness = z
   .object({ ready: z.boolean(), reasons: z.array(z.string()) })
   .refine((row) => row.ready === (row.reasons.length === 0));
+export const eligibility = z
+  .object({
+    url: z.url(),
+    state: z.enum(["ELIGIBLE", "VALIDATION_FAILED", "UNAVAILABLE"]),
+    reasons: z.array(z.string()),
+    addresses: z.array(z.string()),
+    safety: z.array(z.string()),
+  })
+  .refine((row) => (row.state === "ELIGIBLE") === (row.reasons.length === 0));
+export type Eligibility = z.infer<typeof eligibility>;
+export const eligibilityTitle = {
+  ELIGIBLE: "Eligible for scanning.",
+  VALIDATION_FAILED: "Target validation failed.",
+  UNAVAILABLE: "Scan unavailable.",
+} as const;
 export const launched = z.object({ assessmentId: z.uuid() });
 
 export const steps: { stage: Stage; label: string; detail: string }[] = [
@@ -81,6 +95,19 @@ const readinessText: Record<string, string> = {
   SCAN_ALREADY_RUNNING: "Another scan is running. Wait for it to finish.",
   DEMO_SCOPE_DISABLED: "The local API was started without the Juice Shop demo setting.",
   RESOURCE_LIMITS_CHANGED: "The scanner's memory settings differ from the approved ones.",
+  TARGET_URL_INVALID: "The address is not a valid http:// or https:// address.",
+  TARGET_CREDENTIALS: "The address contains a user name or password.",
+  TARGET_HOST_PROHIBITED: "The host name is local or internal.",
+  TARGET_DNS_FAILED: "The host name could not be resolved.",
+  TARGET_ADDRESS_PROHIBITED: "The host name resolves to a private, local or reserved address.",
+  TARGET_NOT_CANONICAL: "The stored address is not in its canonical form. Register it again.",
+  TARGET_NOT_ROOT: "Only a whole website can be scanned. Register its address without a path.",
+  TARGET_IPV4_REQUIRED: "The website has no usable IPv4 address.",
+  TARGET_VALIDATION_FAILED: "The address could not be validated.",
+  DEMO_ADDRESS_UNKNOWN: "The demo container is not on its expected network address.",
+  EGRESS_GUARD_UNAVAILABLE: "The outbound firewall image is missing. Build it as described in the infrastructure README.",
+  EGRESS_UNVERIFIED: "The outbound firewall could not be proven.",
+  SCAN_EXCLUSIONS_UNVERIFIED: "The scanner did not confirm the safety exclusions.",
   SERVICE_UNHEALTHY: "The scanner or the demo website is not healthy.",
   MEMORY_TOO_HIGH: "The scanner is using too much memory. Restarting ZAP frees it.",
   DOCKER_UNAVAILABLE: "Docker could not be checked. Make sure Docker Desktop is running.",
@@ -94,6 +121,9 @@ const readinessText: Record<string, string> = {
   UNRESOLVED_SCAN_IN_SESSION: "An earlier scan has not been resolved. Open it and check its outcome, or cancel its tracking.",
   DATABASE_OR_SESSION_UNAVAILABLE: "The database or the scanner session could not be checked.",
 };
+// Known codes become sentences. Evidence codes stay as they are.
+export const reasonText = (reason: string) =>
+  readinessText[reason] ?? reason.replace(/[^A-Z0-9_]/g, "").slice(0, 60);
 export const readinessMessage = (reason: string) =>
   readinessText[reason] ?? "A scanner check did not pass (" + reason.replace(/[^A-Z_]/g, "").slice(0, 40) + ").";
 

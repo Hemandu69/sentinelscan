@@ -35,7 +35,7 @@ Open **Websites**, then a website.
 | Findings | Original scanner records with search and severity filter |
 | Reports | Generate, preview and download PDF reports |
 
-Scanning is offered only for approved addresses. The start dialog shows the exact address, the fixed configuration, readiness and the consent wording. Percentages come from the scanner; otherwise the step is described in words.
+Scanning is offered only for websites that pass validation: Eligible, Target validation failed, or Scan unavailable with its reason. Authorization is confirmed before every scan. The start dialog shows the exact address, the fixed configuration, readiness and the consent wording. Percentages come from the scanner; otherwise the step is described in words.
 
 ## Run records
 

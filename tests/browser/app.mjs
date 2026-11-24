@@ -45,7 +45,7 @@ function reset(change = {}) {
     tamper: false,
     ready: [],
     scan: null,
-    approved: true,
+    eligibility: { state: "ELIGIBLE", reasons: [], addresses: ["203.0.113.9"], safety: ["Addresses for sign-out are not requested."] },
     more: [],
     compare: null,
     stale: false,
@@ -110,7 +110,7 @@ function reply(method, url, body) {
   if (p === "/api/v1/targets/" + site)
     return {
       ...state.sites[0],
-      confirmation: { token: findingId, wording: "I have permission.", version: "1", url: demo, expiresAt: "2099-01-01T00:00:00Z" },
+      confirmation: { token: findingId, wording: "I have permission.", version: "1", url: state.sites[0].canonicalUrl, expiresAt: "2099-01-01T00:00:00Z" },
     };
   if (p === "/api/v1/assessments" && method === "POST")
     return { id, targetId: site, targetUrlSnapshot: demo, status: "PENDING" };
@@ -121,8 +121,9 @@ function reply(method, url, body) {
       severities: state.status === "COMPLETED" ? (state.findings ? [{ severity: "LOW", count: state.findings }] : []) : null,
     };
   if (p === "/api/v1/scans/policy")
-    return { approvedTargets: state.approved ? [demo] : ["http://other.test/"], configuration: { id: "standard", name: "Standard", details: ["Three threads", "60 alerts per rule"] } };
-  if (p === "/api/v1/scans/readiness") return { ready: !state.ready.length, reasons: state.ready };
+    return { configuration: { id: "standard", name: "Standard", details: ["Three threads", "60 alerts per rule"] } };
+  if (p.endsWith("/eligibility")) return { url: state.sites[0]?.canonicalUrl ?? demo, ...state.eligibility };
+  if (p.endsWith("/readiness")) return { ready: !state.ready.length, reasons: state.ready };
   if (p === "/api/v1/scans") {
     state.status = "INITIALIZING";
     state.scan = { stage: "SPIDER_RUNNING", spider: { progress: 40, requests: 12, alerts: 3 } };
@@ -589,12 +590,44 @@ try {
     state.scan.active.progress = 30;
     await page.getByText("30% reported").waitFor({ timeout: 9000 });
   });
-  await check("a website outside the approved list cannot be scanned", { state: { approved: false } }, async (page) => {
-    for (const section of ["", "/scans"]) {
-      await page.goto(at(section));
-      await page.getByText("Scanning is not available for this website.").waitFor();
-      assert.equal(await page.getByRole("button", { name: "Start New Security Scan" }).count(), 0);
-    }
+  const none = { addresses: [], safety: [] };
+  for (const [title, eligibility, reason] of [
+    ["Target validation failed.", { ...none, state: "VALIDATION_FAILED", reasons: ["TARGET_ADDRESS_PROHIBITED"] }, "private, local or reserved address"],
+    ["Scan unavailable.", { ...none, state: "UNAVAILABLE", reasons: ["EGRESS_GUARD_UNAVAILABLE"] }, "firewall image is missing"],
+  ])
+    await check("no enabled scan action: " + title, { state: { eligibility } }, async (page) => {
+      for (const section of ["", "/scans"]) {
+        await page.goto(at(section));
+        await page.getByText(title).waitFor();
+        await page.getByText(reason).waitFor();
+        assert.equal(await page.getByRole("button", { name: "Start New Security Scan" }).count(), 0);
+        assert.doesNotMatch(await textOf(page), /juice-shop:3000\/ is approved/);
+        assert.deepEqual(await audit(page), []);
+      }
+      state.eligibility = { ...none, state: "ELIGIBLE", reasons: [], addresses: ["203.0.113.9"] };
+      await page.getByRole("button", { name: "Check again" }).click();
+      await page.getByRole("button", { name: "Start New Security Scan" }).waitFor();
+    });
+  await check("an eligibility answer for another address or a failed check offers no scan", { state: { eligibility: { ...none, url: "https://other.example/", state: "ELIGIBLE", reasons: [], addresses: ["203.0.113.9"] } } }, async (page) => {
+    await page.goto(at(""));
+    await page.getByText("The check could not be completed").waitFor();
+    assert.equal(await page.getByRole("button", { name: "Start New Security Scan" }).count(), 0);
+    state.fail["/eligibility"] = "abort";
+    await page.reload();
+    await page.getByText("Scan unavailable.").waitFor();
+    assert.equal(await page.getByRole("button", { name: "Start New Security Scan" }).count(), 0);
+  });
+  await check("a public website shows its own scope, safety limits and consent", {}, async (page) => {
+    state.sites[0].canonicalUrl = "https://www.hemandu.com/";
+    await page.goto(at(""));
+    await page.getByText("Eligible for scanning.").waitFor();
+    await page.getByText("Authorization required").waitFor();
+    await page.getByRole("button", { name: "Start New Security Scan" }).click();
+    const dialog = page.getByRole("dialog");
+    await dialog.getByText("Addresses for sign-out are not requested.").waitFor();
+    assert.match(await dialog.innerText(), /https:\/\/www\.hemandu\.com\/[\s\S]*Other domains and subdomains are out of scope/);
+    assert.equal(await dialog.getByRole("button", { name: "Start scan" }).isDisabled(), true);
+    assert.deepEqual(state.posts, []);
   });
   const earlier = { id: second, targetId: site, website: "Fixture", targetUrlSnapshot: demo, status: "COMPLETED", requestedAt: "2026-11-20T08:00:00.000Z", startedAt: null, finishedAt: "2026-11-20T08:06:00.000Z", outcomeExplanation: null, findingCount: 1 };
   const refs = { earlier: { id: second, finishedAt: earlier.finishedAt, findings: 1 }, later: { id, finishedAt: now, findings: 2 } };
