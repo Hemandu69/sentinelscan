@@ -1,0 +1,218 @@
+.workspace-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  align-items: flex-end;
+  justify-content: space-between;
+  padding: 30px 0 18px;
+}
+.workspace-head h1 {
+  font-size: clamp(34px, 4vw, 56px);
+  line-height: 1.08;
+  letter-spacing: -0.04em;
+  overflow-wrap: anywhere;
+}
+.workspace-head code {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 6px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 24px;
+}
+.tabs a {
+  padding: 10px 14px;
+  border-bottom: 3px solid transparent;
+  font-weight: 600;
+  color: var(--muted);
+}
+.tabs a:hover {
+  color: var(--ink);
+  background: var(--soft);
+}
+.tabs a[aria-current] {
+  color: var(--ink);
+  border-bottom-color: var(--copper);
+}
+.workspace h2,
+.assessment-page h2 {
+  font-size: clamp(23px, 2vw, 30px);
+  line-height: 1.2;
+  letter-spacing: -0.03em;
+  margin-bottom: 8px;
+}
+.workspace .record h2,
+.workspace .registry h2 {
+  font-size: 23px;
+}
+.workspace > p,
+.workspace .lead {
+  max-width: 74ch;
+  margin-bottom: 14px;
+}
+.workspace .lead a,
+.row-links a,
+.table-wrap a,
+.hint a {
+  color: var(--copper);
+  text-decoration: underline;
+}
+.row-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+}
+.not-ready {
+  border-left: 3px solid var(--copper);
+  background: var(--soft);
+  padding: 12px 16px;
+  margin: 0 0 16px;
+}
+.not-ready ul,
+.bullets,
+.config-list {
+  list-style: disc;
+  padding-left: 1.3rem;
+}
+.picker {
+  display: block;
+  margin-bottom: 18px;
+}
+.picker select,
+.workspace select {
+  color: var(--ink);
+  background: var(--soft);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 9px 12px;
+  max-width: 100%;
+  font: inherit;
+}
+.table-wrap {
+  overflow-x: auto;
+}
+.history {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+.history th {
+  font-size: 13px;
+  color: var(--muted);
+  font-weight: 600;
+}
+.history th,
+.history td {
+  border-bottom: 1px solid var(--line);
+  padding: 10px 14px 10px 0;
+  vertical-align: top;
+}
+.scan-progress {
+  border: 1px solid var(--line);
+  padding: 20px;
+  margin: 16px 0 26px;
+}
+.scan-progress p {
+  margin: 8px 0;
+  max-width: 74ch;
+}
+.steps {
+  list-style: none;
+  padding: 0;
+  margin: 14px 0;
+}
+.steps li {
+  padding: 6px 0 6px 26px;
+  position: relative;
+  color: var(--muted);
+}
+.steps li::before {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 12px;
+  width: 11px;
+  height: 11px;
+  border: 1.5px solid currentColor;
+  border-radius: 50%;
+}
+.steps .done::before {
+  background: currentColor;
+}
+.steps .current {
+  color: var(--ink);
+  font-weight: 600;
+}
+.steps .current::before {
+  border-color: var(--copper);
+  border-width: 4px;
+  width: 6px;
+  height: 6px;
+}
+.scan-progress progress {
+  width: min(320px, 100%);
+  height: 12px;
+  accent-color: var(--copper);
+  vertical-align: middle;
+}
+.confirm-row {
+  border-left: 3px solid var(--copper);
+  background: var(--soft);
+  padding: 12px 16px;
+}
+.confirm-row .dialog-actions {
+  justify-content: flex-start;
+}
+.start-dialog {
+  width: min(560px, 94vw);
+  max-height: 92vh;
+  overflow-y: auto;
+}
+.start-dialog fieldset {
+  border: 1px solid var(--line);
+  padding: 10px 14px;
+  margin: 12px 0 0;
+}
+.start-dialog legend {
+  font-weight: 600;
+  font-size: 14px;
+  padding: 0 6px;
+}
+.start-dialog .config-list {
+  color: var(--muted);
+  font-size: 14px;
+  margin-top: 8px;
+}
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.workspace .primary,
+.workspace .refresh,
+.assessment-page .refresh {
+  min-height: 42px;
+}
+.assessment-page .facts-line {
+  color: var(--muted);
+  margin: 4px 0;
+}
+.assessment-page > section,
+.assessment-page > details {
+  margin-bottom: 20px;
+}
+@media (max-width: 760px) {
+  .workspace-head {
+    padding-top: 20px;
+  }
+  .tabs a {
+    padding: 9px 10px;
+    font-size: 15px;
+  }
+}

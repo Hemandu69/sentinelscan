@@ -68,7 +68,7 @@ export function ObservedRun({
   return (
     <section className="ledger-entry" aria-label="Selected provider run">
       <h4>
-        {kind === "active" ? "Active check" : "Spider"} · Run {scanId}
+        {kind === "active" ? "Active scan" : "Spider"} · Run {scanId}
       </h4>
       {error && <p role="alert">{error}</p>}
       {row ? (

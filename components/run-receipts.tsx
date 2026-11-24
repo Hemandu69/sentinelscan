@@ -90,7 +90,7 @@ export function RunReceipts({
       )}
       {data?.runs.map((r) => (
         <p key={r.kind}>
-          {r.kind === "active" ? "Active check" : "Spider"} · ID {r.scan_id} ·{" "}
+          {r.kind === "active" ? "Active scan" : "Spider"} · ID {r.scan_id} ·{" "}
           {r.state ?? "Unknown state"} ·{" "}
           {r.progress === null ? "Progress unavailable" : r.progress + "%"} ·
           Observed {new Date(r.observed_at).toLocaleString()}

@@ -724,3 +724,30 @@ dialog form button {
 .ledger-entry small {color:var(--muted)}
 .ledger-filters {display:flex;gap:1rem;flex-wrap:wrap;margin:1.5rem 0}
 .ledger-filters input,.ledger-filters select {color:var(--ink);background:var(--soft);border:1px solid var(--line);padding:.5rem;font:inherit}
+
+.rail .secondary-nav {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid #507065;
+}
+.rail .secondary-nav a {
+  font-size: 14px;
+  padding-block: 9px;
+}
+select:focus-visible,
+summary:focus-visible,
+progress:focus-visible,
+.table-wrap:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 4px;
+}
+.field-hint {
+  font-weight: 400;
+  font-size: 13px;
+  color: var(--muted);
+}
+.entry-title {
+  font-weight: 600;
+  color: var(--copper);
+  text-decoration: underline;
+}

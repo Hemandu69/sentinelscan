@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import { useState } from "react";
 import { Icon } from "./icons";
 import { SiteDialog } from "./site-dialog";
@@ -44,14 +45,14 @@ export function Overview() {
   const resultNote = !summary
     ? waiting
     : !summary.totalChecks
-      ? "No checks created yet."
+      ? "No assessments yet."
       : !results
-        ? "Awaiting a completed check."
-        : "Across completed checks.";
+        ? "Awaiting a completed assessment."
+        : "Across completed assessments.";
   const isReady = sites.state === "ready";
   return (
     <>
-      <Navigation />
+      <Navigation section="overview" />
       <main id="main">
         <div id="overview" className="mast">
           <span>
@@ -96,14 +97,14 @@ export function Overview() {
             }
           />
           <Metric
-            label="Completed checks"
+            label="Completed assessments"
             value={summary ? String(summary.completedChecks) : "—"}
             note={
-              summary ? `Of ${summary.totalChecks} checks created` : waiting
+              summary ? `Of ${summary.totalChecks} assessments created` : waiting
             }
           />
           <Metric
-            label="Security issues"
+            label="Recorded findings"
             value={results ? String(results.findingCount) : "—"}
             note={resultNote}
           />
@@ -112,11 +113,11 @@ export function Overview() {
           <section id="issues">
             <div className="section-head">
               <Icon name="shield" />
-              <h2>Security issues</h2>
+              <h2>Issue guide</h2>
             </div>
             <p className="lead">
               {results
-                ? "Findings from completed checks. An issue seen in two checks counts twice."
+                ? "What each severity means, with findings from completed assessments. A finding recorded in two assessments counts twice."
                 : resultNote}
             </p>
             <dl className="severity">
@@ -198,13 +199,13 @@ export function Overview() {
                         day: "numeric",
                       }).format(new Date(s.createdAt))}
                     </time>
-                    <a
+                    <Link
                       className="detail-link"
                       href={"/targets/" + encodeURIComponent(s.id)}
-                      aria-label={"View Details for " + s.displayName}
+                      aria-label={"Open " + s.displayName}
                     >
-                      View Details <Icon name="arrow" size={14} />
-                    </a>
+                      Open <Icon name="arrow" size={14} />
+                    </Link>
                   </div>
                 </li>
               ))}

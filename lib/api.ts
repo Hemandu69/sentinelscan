@@ -11,6 +11,8 @@ export type Site = {
 export function timeoutFor(path: string) {
   if (path.endsWith("/zap-import")) return 900000;
   if (path.endsWith("/reports")) return 90000;
+  if (path === "/api/v1/scans" || path === "/api/v1/scans/readiness") return 90000;
+  if (path.endsWith("/scan") || path.endsWith("/scan/cancel")) return 20000;
   // Two attempts, each with one transport retry on the server.
   if (/\/issues\/[a-f0-9]{64}\/analysis$/.test(path)) return 600000;
   if (path.endsWith("/zap-association") || path.endsWith("/zap-sync"))
@@ -19,7 +21,15 @@ export function timeoutFor(path: string) {
     return 20000;
   return 8000;
 }
-export class RequestFailure extends Error {}
+export class RequestFailure extends Error {
+  readonly code: string;
+  readonly reasons: string[];
+  constructor(message: string, code = "", reasons: string[] = []) {
+    super(message);
+    this.code = code;
+    this.reasons = reasons;
+  }
+}
 export class RequestTimeout extends RequestFailure {
   name = "TimeoutError";
 }
@@ -202,6 +212,15 @@ async function open(
         "The report did not match the recorded findings, so no PDF was created.",
       REPORT_RENDER_FAILED: "The PDF could not be generated.",
       REPORT_STORAGE_FAILED: "The PDF could not be stored.",
+      SCAN_TARGET_NOT_APPROVED: "Scanning is not approved for this website.",
+      SCAN_ALREADY_RUNNING: "Another scan is already running.",
+      SCAN_NOT_READY: "The scan cannot start yet. Nothing was changed.",
+      SCAN_NOT_RUNNING: "No scan is running for this assessment.",
+      SCAN_NOT_CANCELLABLE:
+        "The scans have ended and results are being verified, so there is nothing left to stop.",
+      SCAN_IN_PROGRESS: "SentinelScan is running this scan. Use Stop scan instead.",
+      COMPARISON_ORDER: "Choose the older assessment as the earlier one.",
+      COMPARISON_DIFFERENT_WEBSITE: "These assessments belong to different websites.",
       ISSUE_NOT_FOUND: "This issue no longer exists. Reload the page.",
       TOO_MANY_FINDINGS: "There are too many findings to show at once.",
       ZAP_SESSION_NOT_SAVED:
@@ -227,7 +246,11 @@ async function open(
       (typeof code === "string" && Object.hasOwn(messages, code)
         ? messages[code]
         : "The local service could not complete this request.") +
-        (reasons.length ? " Missing evidence: " + reasons.join(", ") + "." : ""),
+        (reasons.length && code === "ZAP_SUCCESS_OR_SCOPE_UNVERIFIED"
+          ? " Missing evidence: " + reasons.join(", ") + "."
+          : ""),
+      typeof code === "string" ? code : "",
+      reasons,
     );
   }
   return res;

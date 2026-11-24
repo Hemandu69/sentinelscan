@@ -9,7 +9,15 @@ const date = (value: string) =>
   new Date(value).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 type Action = "generate" | "download" | "preview";
 
-export function ReportActions({ id, status }: { id: string; status: string }) {
+export function ReportActions({
+  id,
+  status,
+  heading = "Report",
+}: {
+  id: string;
+  status: string;
+  heading?: string;
+}) {
   const base = "/api/v1/assessments/" + encodeURIComponent(id) + "/reports";
   const schema = useMemo(() => reportsFor(id), [id]);
   const done = status === "COMPLETED";
@@ -98,7 +106,7 @@ export function ReportActions({ id, status }: { id: string; status: string }) {
   const older = state?.reports.filter((row) => row.available && row.id !== ready?.id) ?? [];
   return (
     <section className="registry report-actions" aria-labelledby="report-title">
-      <h2 id="report-title">Report</h2>
+      <h2 id="report-title">{heading}</h2>
       {!done ? (
         <p>No report is available. {unavailableReason(status)}</p>
       ) : (

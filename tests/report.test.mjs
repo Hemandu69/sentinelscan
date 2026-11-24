@@ -34,6 +34,7 @@ const page = (items, hasMore = false) => ({ items, hasMore });
 const issue = (items) => ({
   key: "a".repeat(64),
   assessmentId: id,
+  targetId: id,
   website: "Fixture",
   scanner: { title: items[0].name, ruleId: null, severity: items[0].normalizedSeverity, sourceSeverity: "Low", confidence: items[0].confidence, method: null, parameter: null, evidence: null, description: "Fixture", remediation: null, references: [], cweId: null, wascId: null },
   guide: null,

@@ -10,7 +10,9 @@ import {
   statusLabel,
 } from "../lib/records";
 import { Navigation } from "./navigation";
-import { AssessmentSummary, IssuesView } from "./issues";
+import { AssessmentSummary, TechnicalView } from "./issues";
+import { ScanProgress } from "./scan-progress";
+import "./workspace.css";
 import { ReportActions } from "./report-actions";
 import { RunReceipts } from "./run-receipts";
 import { ObservedRun } from "./observed-run";
@@ -86,15 +88,17 @@ function Pager({
     )
   );
 }
-const date = (s: string) => new Date(s).toLocaleString();
-export function AssessmentHistory({ targetId }: { targetId?: string }) {
+const date = (s: string) =>
+  new Date(s).toLocaleString(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+export function AssessmentHistory() {
   const [offset, set] = useState(0);
   return (
     <Read
       path={
-        "/api/v1/assessments?offset=" +
-        offset +
-        (targetId ? "&targetId=" + encodeURIComponent(targetId) : "")
+        "/api/v1/assessments?offset=" + offset
       }
       schema={assessments}
     >
@@ -102,20 +106,26 @@ export function AssessmentHistory({ targetId }: { targetId?: string }) {
         <>
           {data.items.length === 0 && (
             <p>
-              No security checks on this page. Create a check from Website
-              Details.
+              No assessments yet. Open a website to start a security scan.
             </p>
           )}
           {data.items.map((row) => (
             <article className="ledger-entry" key={row.id}>
-              <Link href={"/assessments/" + row.id}>{row.website}</Link>
-              <p>{row.targetUrlSnapshot}</p>
-              <small>{row.id}</small>
+              <Link className="entry-title" href={"/assessments/" + row.id}>
+                {row.website}, {date(row.requestedAt)}
+              </Link>
               <p>
-                {statusLabel(row.status)} · Requested {date(row.requestedAt)}
+                <strong>{statusLabel(row.status)}</strong>
                 {row.findingCount !== null &&
-                  " · Findings: " + row.findingCount}
+                  ` · ${row.findingCount} ${row.findingCount === 1 ? "finding" : "findings"}`}
               </p>
+              <p className="facts-line">{row.targetUrlSnapshot}</p>
+              {row.status === "COMPLETED" && row.targetId && (
+                <p className="row-links">
+                  <Link href={`/targets/${row.targetId}/analysis?assessment=${row.id}`}>AI Analysis</Link>
+                  <Link href={`/targets/${row.targetId}/reports?assessment=${row.id}`}>Report</Link>
+                </p>
+              )}
             </article>
           ))}
           <Pager offset={offset} set={set} more={data.hasMore} />
@@ -135,7 +145,7 @@ function Runs({
   const [selected, select] = useState<string | null>(null);
   return (
     <section className="registry">
-      <h3>{kind === "spider" ? "Spider discovery" : "Active checks"}</h3>
+      <h3>{kind === "spider" ? "Spider discovery" : "Active scans"}</h3>
       <button
         className="refresh"
         onClick={() => {
@@ -206,17 +216,24 @@ export function RecordsPage({
   return (
     <>
       <Navigation section={view} />
-      <main id="main">
-        <header className="hero detail-hero">
-          <div className="art" aria-hidden="true" />
-          <div className="hero-copy">
+      <main id="main" className="assessment-page">
+        {id && (
+          <nav className="mast" aria-label="Breadcrumb">
+            <span>
+              <Link href="/assessments">Assessments</Link> <b aria-hidden="true">/</b>{" "}
+              <strong>Assessment details</strong>
+            </span>
+          </nav>
+        )}
+        <header className="workspace-head">
+          <div>
             <h1>{title}</h1>
             <p>
               {id
-                ? "Review this check and its recorded results."
+                ? "What happened in this assessment, and where its results are."
                 : view === "assessments"
-                  ? "Security checks requested for your websites."
-                  : "What your completed checks found, and what to do next."}
+                  ? "Every assessment of your websites, newest first."
+                  : "Original scanner records from completed assessments. For explanations, open a website's AI Analysis."}
             </p>
           </div>
         </header>
@@ -226,83 +243,75 @@ export function RecordsPage({
             key={revision}
             schema={detailSchema}
           >
-            {(row) => (
-              <>
-                <section className="registry">
-                  <h2>{row.website}</h2>
-                  {row.outcomeExplanation && <p>{row.outcomeExplanation}</p>}
-                  <p>{row.targetUrlSnapshot}</p>
-                  <small>{row.id}</small>
-                  <p>
-                    {statusLabel(row.status)} · Requested{" "}
-                    {date(row.requestedAt)}
-                  </p>
-                  <p>
-                    First observed running:{" "}
-                    {row.startedAt ? date(row.startedAt) : "Unrecorded"} ·
-                    Finished:{" "}
-                    {row.finishedAt ? date(row.finishedAt) : "Unrecorded"}
-                  </p>
-                </section>
-                <ReportActions id={id} status={row.status} />
-                {row.findingCount !== null && (
-                  <AssessmentSummary id={id} evidence={row.evidence} />
-                )}
-                <RunReceipts
-                  id={id}
-                  canAssociate={
-                    row.targetUrlSnapshot === "http://juice-shop:3000/"
-                  }
-                  onUpdated={() => refreshDetail((n) => n + 1)}
-                />
-                <h2>Provider runs</h2>
-                <p>
-                  These runs belong to the configured daemon. Linking requires
-                  verified run identity and authorized scope.
-                </p>
-                <Runs
-                  kind="spider"
-                  assessmentId={
-                    row.targetUrlSnapshot === "http://juice-shop:3000/"
-                      ? id
-                      : undefined
-                  }
-                />
-                <Runs
-                  kind="active"
-                  assessmentId={
-                    row.targetUrlSnapshot === "http://juice-shop:3000/"
-                      ? id
-                      : undefined
-                  }
-                />
-                <h2>Recorded findings</h2>
-                {row.findingCount === null ? (
-                  <p>Final results are unavailable for this check.</p>
-                ) : (
-                  <>
+            {(row) => {
+              const closed = ["COMPLETED", "FAILED", "CANCELLED"].includes(row.status);
+              const demo = row.targetUrlSnapshot === "http://juice-shop:3000/";
+              return (
+                <>
+                  <section className="registry" aria-labelledby="assessment-title">
+                    <h2 id="assessment-title">{row.website}</h2>
                     <p>
-                      {row.findingCount} recorded. Raw scanner records stay available
-                      under each issue.
+                      <strong>{statusLabel(row.status)}</strong>
+                      {row.findingCount !== null &&
+                        ` · ${row.findingCount} ${row.findingCount === 1 ? "finding" : "findings"} recorded`}
                     </p>
-                    <Link href={"/assessments/" + row.id + "/report"}>
-                      Open the report page
-                    </Link>
-                    {row.severities?.map((group) => (
-                      <p key={group.severity}>
-                        {group.severity} · {group.count}
+                    {row.outcomeExplanation && <p>{row.outcomeExplanation}</p>}
+                    {row.findingCount === null && (
+                      <p>Final results are unavailable for this assessment.</p>
+                    )}
+                    <p className="facts-line">
+                      {row.targetUrlSnapshot} · Requested {date(row.requestedAt)} · First observed running:{" "}
+                      {row.startedAt ? date(row.startedAt) : "unrecorded"} · Finished:{" "}
+                      {row.finishedAt ? date(row.finishedAt) : "unrecorded"}
+                    </p>
+                    <p className="facts-line">Assessment {row.id}</p>
+                    {row.targetId && (
+                      <p className="row-links">
+                        <Link href={"/targets/" + row.targetId}>Open the website</Link>
+                        {row.status === "COMPLETED" && (
+                          <>
+                            <Link href={`/targets/${row.targetId}/analysis?assessment=${row.id}`}>
+                              Read the AI Analysis
+                            </Link>
+                            <Link href={`/targets/${row.targetId}/findings?assessment=${row.id}`}>
+                              Technical findings
+                            </Link>
+                          </>
+                        )}
                       </p>
-                    ))}
-                    <IssuesView assessmentId={id} />
-                  </>
-                )}
-              </>
-            )}
+                    )}
+                  </section>
+                  {!closed && row.status !== "PENDING" && (
+                    <ScanProgress id={id} onChanged={() => refreshDetail((n) => n + 1)} />
+                  )}
+                  <ReportActions id={id} status={row.status} />
+                  {row.findingCount !== null && <AssessmentSummary id={id} evidence={row.evidence} />}
+                  <details className="disclosure" open={!closed}>
+                    <summary>Advanced: scanner records and manual operation</summary>
+                    <RunReceipts
+                      id={id}
+                      canAssociate={demo}
+                      onUpdated={() => refreshDetail((n) => n + 1)}
+                    />
+                    <h2>Scanner runs</h2>
+                    <p>
+                      These runs belong to the configured scanner. They are linked only after their identity
+                      and scope are verified.
+                    </p>
+                    <Runs kind="spider" assessmentId={demo ? id : undefined} />
+                    <Runs kind="active" assessmentId={demo ? id : undefined} />
+                  </details>
+                </>
+              );
+            }}
           </Read>
         ) : view === "assessments" ? (
           <AssessmentHistory />
         ) : (
-          <IssuesView />
+          <>
+            <h2 className="visually-hidden">Technical findings</h2>
+            <TechnicalView />
+          </>
         )}
       </main>
     </>

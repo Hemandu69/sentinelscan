@@ -22,6 +22,7 @@ export const issue = z
   .object({
     key: z.string().regex(/^[a-f0-9]{64}$/),
     assessmentId: z.uuid(),
+    targetId: z.uuid(),
     website: z.string(),
     scanner: z.object({
       title: z.string(),
@@ -53,7 +54,7 @@ export const issue = z
       .min(1),
     endpoints: z.array(z.string()).min(1),
     analysis: z.object({
-      status: z.enum(["COMPLETED", "PARTIAL", "FAILED", "NONE"]),
+      status: z.enum(["COMPLETED", "PARTIAL", "STALE", "FAILED", "NONE"]),
       errorCode: z.string().nullable(),
       provider: z.string().nullable(),
       model: z.string().nullable(),
@@ -146,6 +147,7 @@ export function analysisLabel(status: Issue["analysis"]["status"]) {
   return {
     COMPLETED: "AI analysed",
     PARTIAL: "Partly AI analysed",
+    STALE: "AI analysis is outdated",
     FAILED: "AI analysis failed",
     NONE: "Not AI analysed",
   }[status];
@@ -169,4 +171,16 @@ export function summarize(data: IssueList) {
         ? `${attention.length} ${attention.length === 1 ? "issue needs" : "issues need"} attention.`
         : "Only informational observations were recorded. None needs urgent attention on this evidence.",
   };
+}
+// Ordered by AI priority where one exists, otherwise by scanner severity. The basis is shown.
+export const actionGroups = [
+  ["first", "Act first"],
+  ["plan", "Plan a fix"],
+  ["review", "Review when convenient"],
+] as const;
+export function actionGroup(row: Issue): (typeof actionGroups)[number][0] {
+  const basis = row.analysis.result?.practicalPriority ?? row.scanner.severity;
+  if (["URGENT", "CRITICAL"].includes(basis) || basis === "HIGH") return "first";
+  if (basis === "MEDIUM" || (basis === "LOW" && !row.analysis.result)) return "plan";
+  return "review";
 }

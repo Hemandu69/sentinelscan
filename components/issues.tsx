@@ -10,6 +10,8 @@ import {
   explain,
   issue as issueSchema,
   issueList,
+  actionGroup,
+  actionGroups,
   originLabel,
   priorityName,
   severityName,
@@ -17,7 +19,7 @@ import {
   type Issue,
   type IssueList,
 } from "../lib/issues";
-import type { runEvidence } from "../lib/records";
+import { detailFor, type runEvidence } from "../lib/records";
 import "./issues.css";
 
 const markers: Record<string, string> = {
@@ -65,7 +67,7 @@ export function useIssues(assessmentId?: string) {
     reload,
   };
 }
-function Facts({ row }: { row: Issue }) {
+function Facts({ row, open = false }: { row: Issue; open?: boolean }) {
   const { scanner } = row;
   const facts: [string, string | null][] = [
     ["Original alert", scanner.title],
@@ -79,7 +81,7 @@ function Facts({ row }: { row: Issue }) {
     ["Threat class", scanner.wascId ? "WASC-" + scanner.wascId : null],
   ];
   return (
-    <details className="disclosure">
+    <details className="disclosure" open={open}>
       <summary>Technical evidence</summary>
       <p className="provenance">
         Recorded by OWASP ZAP and unchanged by SentinelScan.
@@ -153,14 +155,23 @@ function IssueCard({
   return (
     <article className="issue" aria-labelledby={"issue-" + row.key}>
       <header>
-        <SeverityBadge value={row.scanner.severity} />
-        <h2 id={"issue-" + row.key}>{text.title}</h2>
+        <p className="badges">
+          <span className="badge-label">Scanner severity</span>{" "}
+          <SeverityBadge value={row.scanner.severity} />
+          {ai && (
+            <>
+              {" "}
+              <span className="badge-label">AI priority</span>{" "}
+              <span className="origin origin-ai">{priorityName(ai.practicalPriority)}</span>
+            </>
+          )}
+        </p>
+        <h4 className="issue-title" id={"issue-" + row.key}>{text.title}</h4>
         <p>{text.summary}</p>
         <p className="issue-meta">
           {row.endpoints.length} affected{" "}
           {row.endpoints.length === 1 ? "location" : "locations"} ·{" "}
-          {analysisLabel(row.analysis.status)} ·{" "}
-          <Link href={"/assessments/" + row.assessmentId}>{row.website}</Link>
+          {analysisLabel(row.analysis.status)}
         </p>
         <p className="next-action">
           <strong>Next:</strong> {text.action}
@@ -169,11 +180,11 @@ function IssueCard({
       <details className="disclosure issue-details">
         <summary>Read the explanation</summary>
         <section>
-          <h3>What happened</h3> <Origin kind={text.origin} />
+          <h5>What happened</h5> <Origin kind={text.origin} />
           <p className="preline">{text.what}</p>
         </section>
         <section>
-          <h3>Why it matters</h3>{" "}
+          <h5>Why it matters</h5>{" "}
           {text.why ? (
             <>
               <Origin kind={text.origin} />
@@ -185,7 +196,7 @@ function IssueCard({
           )}
         </section>
         <section>
-          <h3>Affected locations</h3> <Origin kind="scanner" />
+          <h5>Affected locations</h5> <Origin kind="scanner" />
           <ul className="plain">
             {row.endpoints.map((url) => (
               <li key={url}>
@@ -198,7 +209,7 @@ function IssueCard({
           {row.scanner.parameter && <p>Part of the request: {row.scanner.parameter}</p>}
         </section>
         <section>
-          <h3>How to fix it</h3>
+          <h5>How to fix it</h5>
           {ai ? (
             <>
               {" "}
@@ -225,7 +236,7 @@ function IssueCard({
           )}
         </section>
         <section>
-          <h3>How to verify</h3>{" "}
+          <h5>How to verify</h5>{" "}
           {text.verify.length ? (
             <>
               <Origin kind={text.origin} />
@@ -240,7 +251,7 @@ function IssueCard({
           )}
         </section>
         <section>
-          <h3>Confidence and limitations</h3>
+          <h5>Confidence and limitations</h5>
           <p>
             The scanner rates this {row.scanner.sourceSeverity} with{" "}
             {row.scanner.confidence} confidence.
@@ -271,11 +282,24 @@ function IssueCard({
             <p>No AI interpretation is included.</p>
           )}
         </section>
-        <Facts row={row} />
+        <p>
+          <Link
+            className="detail-link"
+            href={`/targets/${row.targetId}/findings?assessment=${row.assessmentId}`}
+          >
+            See the original scanner record
+          </Link>
+        </p>
       </details>
       {canAnalyse && row.analysis.status !== "COMPLETED" && (
         <button className="refresh" disabled={busy} onClick={() => void analyse()}>
-          {busy ? "Analysing…" : row.analysis.status === "NONE" ? "Analyse with AI" : "Try AI analysis again"}
+          {busy
+            ? "Analysing…"
+            : row.analysis.status === "NONE"
+              ? "Analyse with AI"
+              : row.analysis.status === "STALE"
+                ? "Update AI analysis"
+                : "Try AI analysis again"}
         </button>
       )}
       {busy && <p role="status">Analysing this issue. This can take a few minutes.</p>}
@@ -303,11 +327,8 @@ export function IssueCounts({ data }: { data: IssueList }) {
     </dl>
   );
 }
-export function IssuesView({ assessmentId }: { assessmentId?: string }) {
-  const { data, error, reload } = useIssues(assessmentId);
+function useAiStatus() {
   const [status, setStatus] = useState<z.infer<typeof analysisStatus>>();
-  const [q, search] = useState(""),
-    [severity, filter] = useState("");
   useEffect(() => {
     const control = new AbortController();
     request("/api/v1/analysis/status", control.signal)
@@ -318,61 +339,144 @@ export function IssuesView({ assessmentId }: { assessmentId?: string }) {
       .catch(() => {});
     return () => control.abort();
   }, []);
-  if (error)
-    return (
-      <p role="alert">
-        The issues could not be loaded. {error}{" "}
-        <button className="refresh" onClick={reload}>
-          Retry
-        </button>
-      </p>
-    );
-  if (!data) return <p role="status">Loading issues…</p>;
+  return status;
+}
+function LoadError({ error, reload }: { error: string; reload: () => void }) {
+  return (
+    <p role="alert">
+      The results could not be loaded. {error}{" "}
+      <button className="refresh" onClick={reload}>
+        Retry
+      </button>
+    </p>
+  );
+}
+function SeverityLine({ data }: { data: IssueList }) {
+  return (
+    <ul className="severity-line" aria-label="Issues by scanner severity">
+      {["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"].map((key) => (
+        <li key={key}>
+          <SeverityBadge value={key} /> <strong>{data.severities[key] ?? 0}</strong>
+        </li>
+      ))}
+      {(data.severities.OTHER ?? 0) > 0 && (
+        <li>
+          Other <strong>{data.severities.OTHER}</strong>
+        </li>
+      )}
+    </ul>
+  );
+}
+// Plain-language analysis of one assessment. Raw scanner records are a separate page.
+export function AnalysisView({ assessmentId, targetId }: { assessmentId: string; targetId: string }) {
+  const { data, error, reload } = useIssues(assessmentId);
+  const status = useAiStatus();
+  const [evidence, setEvidence] = useState<z.infer<typeof runEvidence> | null>();
+  useEffect(() => {
+    const control = new AbortController();
+    request("/api/v1/assessments/" + encodeURIComponent(assessmentId), control.signal)
+      .then((body) => detailFor(assessmentId).parse(body))
+      .then((row) => {
+        if (!control.signal.aborted) setEvidence(row.evidence ?? null);
+      })
+      .catch(() => {});
+    return () => control.abort();
+  }, [assessmentId]);
+  if (error) return <LoadError error={error} reload={reload} />;
+  if (!data) return <p role="status">Loading the analysis…</p>;
   const unavailable = status ? disabledReason(status.reason, status.storageReady) : null;
+  return (
+    <>
+      <section className="issue-overview assessment-summary" aria-labelledby="analysis-summary">
+        <h3 id="analysis-summary">Assessment summary</h3>
+        <SummaryText data={data} evidence={evidence} level="h4" />
+        <IssueCounts data={data} />
+        <SeverityLine data={data} />
+        <p className="lead">
+          Alerts that report the same thing are recorded once per location, then shown together as one
+          issue. Alerts are not a count of vulnerabilities.
+        </p>
+      </section>
+      <section className="ai-state" aria-labelledby="ai-state-title">
+        <h3 id="ai-state-title">AI coverage</h3>
+        <p>
+          {data.coverage.analysed} of {data.counts.issues} analysed, {data.coverage.unanalysed} not analysed.
+        </p>
+        <p>
+          {unavailable ? (
+            <>
+              <strong>Not configured.</strong> {unavailable} Explanations below come from SentinelScan guides
+              or the scanner, as labelled.
+            </>
+          ) : (
+            status?.enabled &&
+            `Analysis runs only when you ask for it. It sends the sanitized alert, without page content or credentials, to ${status.provider}, which bills each request.`
+          )}
+        </p>
+      </section>
+      <h3>What to do, in order</h3>
+      <p className="hint">
+        Ordered by AI priority where an issue is analysed, otherwise by scanner severity. This is not a
+        security score.
+      </p>
+      {!data.issues.length && (
+        <p>The scan recorded no findings. That does not show that the website is secure.</p>
+      )}
+      {actionGroups.map(([key, title]) => {
+        const rows = data.issues.filter((row) => actionGroup(row) === key);
+        return (
+          rows.length > 0 && (
+            <section key={key} aria-label={title} className="action-group">
+              <p className="group-title">
+                {title} ({rows.length})
+              </p>
+              {rows.map((row) => (
+                <IssueCard
+                  key={row.key}
+                  row={row}
+                  canAnalyse={Boolean(status?.enabled && status.storageReady)}
+                  onUpdated={reload}
+                />
+              ))}
+            </section>
+          )
+        );
+      })}
+      <p>
+        <Link className="detail-link" href={`/targets/${targetId}/findings?assessment=${assessmentId}`}>
+          Open technical findings
+        </Link>
+      </p>
+    </>
+  );
+}
+// Original scanner records for advanced use. No AI text appears here.
+export function TechnicalView({ assessmentId }: { assessmentId?: string }) {
+  const { data, error, reload } = useIssues(assessmentId);
+  const [q, search] = useState(""),
+    [severity, filter] = useState("");
+  if (error) return <LoadError error={error} reload={reload} />;
+  if (!data) return <p role="status">Loading findings…</p>;
   const needle = q.trim().toLowerCase();
   const shown = data.issues.filter(
     (row) =>
       (!severity || row.scanner.severity === severity) &&
       (!needle ||
-        [row.scanner.title, explain(row).title, explain(row).summary, ...row.endpoints].some((text) =>
+        [row.scanner.title, row.scanner.description, row.scanner.ruleId ?? "", ...row.endpoints].some((text) =>
           text.toLowerCase().includes(needle),
         )),
   );
   return (
     <>
-      <section className="issue-overview" aria-label="Issue overview">
-        <IssueCounts data={data} />
-        <p className="lead">
-          Alerts that report the same thing are recorded once per location, then shown together as one
-          issue. Alerts are not a count of vulnerabilities.
-        </p>
-        <ul className="severity-line" aria-label="Issues by scanner severity">
-          {["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"].map((key) => (
-            <li key={key}>
-              <SeverityBadge value={key} /> <strong>{data.severities[key] ?? 0}</strong>
-            </li>
-          ))}
-          {(data.severities.OTHER ?? 0) > 0 && (
-            <li>
-              Other <strong>{data.severities.OTHER}</strong>
-            </li>
-          )}
-        </ul>
-        <p>
-          AI analysis: {data.coverage.analysed} of {data.counts.issues} analysed,{" "}
-          {data.coverage.unanalysed} not analysed.{" "}
-          {unavailable ??
-            (status?.enabled &&
-              `Analysing sends the sanitized alert, without page content or credentials, to ${status.provider}.`)}
-        </p>
-      </section>
+      <IssueCounts data={data} />
+      <SeverityLine data={data} />
       <div className="ledger-filters">
         <label>
-          Search issues{" "}
+          Search findings{" "}
           <input type="search" maxLength={120} value={q} onChange={(e) => search(e.target.value)} />
         </label>
         <label>
-          Scanner severity{" "}
+          Filter by severity{" "}
           <select value={severity} onChange={(e) => filter(e.target.value)}>
             <option value="">All severities</option>
             {["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"].map((key) => (
@@ -383,15 +487,35 @@ export function IssuesView({ assessmentId }: { assessmentId?: string }) {
           </select>
         </label>
       </div>
-      {!data.issues.length && <p>No imported findings yet. Complete a security check first.</p>}
-      {data.issues.length > 0 && !shown.length && <p>No issues match this view.</p>}
+      {!data.issues.length && <p>No imported findings yet. Complete a security scan first.</p>}
+      {data.issues.length > 0 && !shown.length && <p>No findings match this view.</p>}
       {shown.map((row) => (
-        <IssueCard
-          key={row.key}
-          row={row}
-          canAnalyse={Boolean(status?.enabled && status.storageReady)}
-          onUpdated={reload}
-        />
+        <article className="issue" key={row.key} aria-labelledby={"finding-" + row.key}>
+          <SeverityBadge value={row.scanner.severity} />
+          <h3 className="issue-title" id={"finding-" + row.key}>
+            {row.scanner.title}
+          </h3>
+          <p className="issue-meta">
+            Scanner severity {row.scanner.sourceSeverity} · {row.scanner.confidence} confidence ·{" "}
+            {row.findings.length} {row.findings.length === 1 ? "record" : "records"} · {row.website}
+          </p>
+          <ul className="plain">
+            {row.endpoints.map((url) => (
+              <li key={url}>
+                <code>
+                  {row.scanner.method} {url}
+                </code>
+              </li>
+            ))}
+          </ul>
+          <Facts row={row} open={shown.length === 1} />
+          <p className="row-links">
+            <Link href={`/targets/${row.targetId}/analysis?assessment=${row.assessmentId}`}>
+              Read the explanation in AI Analysis
+            </Link>
+            <Link href={"/assessments/" + row.assessmentId}>Open the assessment</Link>
+          </p>
+        </article>
       ))}
     </>
   );
@@ -399,9 +523,11 @@ export function IssuesView({ assessmentId }: { assessmentId?: string }) {
 export function SummaryText({
   data,
   evidence,
+  level: Heading = "h3",
 }: {
   data: IssueList;
   evidence: z.infer<typeof runEvidence> | null | undefined;
+  level?: "h3" | "h4";
 }) {
   const { attention, informational, headline } = summarize(data);
   const list = (rows: Issue[]) => (
@@ -422,17 +548,17 @@ export function SummaryText({
       </p>
       {attention.length > 0 && (
         <>
-          <h3>Needs attention</h3>
+          <Heading>Needs attention</Heading>
           {list(attention)}
         </>
       )}
       {informational.length > 0 && (
         <>
-          <h3>Informational observations</h3>
+          <Heading>Informational observations</Heading>
           {list(informational)}
         </>
       )}
-      <h3>Not covered</h3>
+      <Heading>Not covered</Heading>
       <ul>
         <li>DOM-based XSS (ZAP rule 40026) is excluded from the approved configuration.</li>
         <li>Passive alerts, such as missing security headers, are not imported.</li>

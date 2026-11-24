@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { describeError } from "../lib/api";
 import { explain, originLabel, priorityName, severityName } from "../lib/issues";
+import { statusLabel } from "../lib/records";
 import { loadReport } from "../lib/report";
 import { IssueCounts, SummaryText } from "./issues";
 import "./assessment-report.css";
@@ -84,7 +85,7 @@ export function AssessmentReport({ id }: { id: string }) {
           <p>
             Assessment {id}
             <br />
-            Status {report.assessment.status}
+            Status {statusLabel(report.assessment.status)}
             <br />
             Requested {time(report.assessment.requestedAt)}
             <br />
@@ -173,8 +174,7 @@ export function AssessmentReport({ id }: { id: string }) {
               ))}
               <p>
                 Evidence contract {report.assessment.evidence.contract}, collected{" "}
-                {time(report.assessment.evidence.collectedAt)}. Session{" "}
-                {report.assessment.evidence.sessionKey}. Evidence SHA-256{" "}
+                {time(report.assessment.evidence.collectedAt)}. Evidence SHA-256{" "}
                 {report.assessment.evidence.digest}.
               </p>
             </section>

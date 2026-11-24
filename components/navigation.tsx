@@ -1,28 +1,23 @@
 "use client";
 import Link from "next/link";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Icon } from "./icons";
-const navigation = [
-  ["overview", "Overview", "overview"],
-  ["websites", "Websites", "web"],
-  ["issues", "Issue guide", "shield"],
-  ["system", "System health", "activity"],
+const pages = [
+  ["overview", "Overview", "/", "overview"],
+  ["websites", "Websites", "/websites", "web"],
+  ["assessments", "Assessments", "/assessments", "activity"],
+  ["findings", "Findings", "/findings", "shield"],
+] as const;
+const help = [
+  ["issues", "Issue guide", "/#issues", "shield"],
+  ["system", "System health", "/#system", "activity"],
 ] as const;
 export function Navigation({
-  websiteDetail = false,
   section,
 }: {
-  websiteDetail?: boolean;
-  section?: "assessments" | "findings";
+  section?: "overview" | "websites" | "assessments" | "findings";
 }) {
-  const [menu, setMenu] = useState(false),
-    [active, setActive] = useState("overview");
-  useEffect(() => {
-    const sync = () => setActive(location.hash.slice(1) || "overview");
-    sync();
-    window.addEventListener("hashchange", sync);
-    return () => window.removeEventListener("hashchange", sync);
-  }, []);
+  const [menu, setMenu] = useState(false);
   const toggle = () => {
     const next =
       document.documentElement.dataset.theme === "dark" ? "light" : "dark";
@@ -37,7 +32,7 @@ export function Navigation({
         Skip to content
       </a>
       <aside className="rail">
-        <Link className="brand" href="/#overview">
+        <Link className="brand" href="/">
           <span className="brand-icon">
             <Icon name="tower" size={32} />
           </span>
@@ -56,37 +51,26 @@ export function Navigation({
           id="rail-links"
           className={"rail-body " + (menu ? "expanded" : "")}
         >
-          <nav aria-label="Dashboard sections">
-            {navigation.map(([id, label, icon]) => (
-              <a
+          <nav aria-label="Main">
+            {pages.map(([id, label, href, icon]) => (
+              <Link
                 key={id}
-                href={"/#" + id}
-                aria-current={
-                  (section ?? (websiteDetail ? "websites" : active)) === id
-                    ? "location"
-                    : undefined
-                }
-                onClick={() => {
-                  setActive(id);
-                  setMenu(false);
-                }}
+                href={href}
+                aria-current={section === id ? "page" : undefined}
+                onClick={() => setMenu(false)}
               >
                 <Icon name={icon} />
                 {label}
-              </a>
+              </Link>
             ))}
-            <Link
-              href="/assessments"
-              aria-current={section === "assessments" ? "page" : undefined}
-            >
-              <Icon name="activity" /> Assessments
-            </Link>
-            <Link
-              href="/findings"
-              aria-current={section === "findings" ? "page" : undefined}
-            >
-              <Icon name="shield" /> Findings
-            </Link>
+          </nav>
+          <nav aria-label="Help and status" className="secondary-nav">
+            {help.map(([id, label, href, icon]) => (
+              <Link key={id} href={href} onClick={() => setMenu(false)}>
+                <Icon name={icon} />
+                {label}
+              </Link>
+            ))}
           </nav>
           <button className="theme" onClick={toggle}>
             <span className="light-only">

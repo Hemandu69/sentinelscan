@@ -1,6 +1,7 @@
 import { z } from "zod";
 const assessmentFields = z.object({
   id: z.uuid(),
+  targetId: z.uuid().optional(),
   website: z.string(),
   targetUrlSnapshot: z.string(),
   status: z.string(),
@@ -20,7 +21,6 @@ export const runEvidence = z.object({
   contract: z.string(),
   collectedAt: when,
   digest: z.string().regex(/^[a-f0-9]{64}$/),
-  sessionKey: z.string().regex(/^[a-f0-9]{64}$/),
   spider: z.object({ scanId: z.string(), startedAt: when, endedAt: when, results: count }),
   active: z.object({
     scanId: z.string(),
@@ -48,7 +48,19 @@ export const runEvidence = z.object({
   ),
 });
 export function statusLabel(status: string) {
-  return status === "OUTCOME_UNKNOWN" ? "ENDED · OUTCOME UNKNOWN" : status;
+  return (
+    {
+      PENDING: "Not started",
+      INITIALIZING: "Last recorded: preparing",
+      SPIDER_RUNNING: "Last recorded: finding pages",
+      ACTIVE_SCAN_RUNNING: "Last recorded: testing pages",
+      PROCESSING_RESULTS: "Importing results",
+      COMPLETED: "Completed",
+      FAILED: "Failed",
+      CANCELLED: "Cancelled",
+      OUTCOME_UNKNOWN: "Ended, outcome unknown",
+    }[status] ?? status
+  );
 }
 export const assessmentDetail = assessmentFields
   .extend({

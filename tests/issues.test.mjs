@@ -5,7 +5,7 @@ import { timeoutFor } from "../lib/api.ts";
 const id = "83ee2301-c70b-4c6b-b66d-b8f275d066f0";
 const result = { plainTitle: "AI title", summary: "AI", whatHappened: "AI", whyItMatters: "AI", technicalExplanation: "AI", potentialImpact: "AI", practicalPriority: "NO_ACTION", priorityReason: "AI", recommendedAction: "AI", remediation: [], verificationSteps: ["AI"], falsePositiveNotes: "AI", limitations: "AI", evidenceSufficient: false, exampleCode: null };
 const row = (change = {}) => ({
-  key: "a".repeat(64), assessmentId: id, website: "x",
+  key: "a".repeat(64), assessmentId: id, targetId: id, website: "x",
   scanner: { title: "Raw alert", ruleId: "1", severity: "INFO", sourceSeverity: "Informational", confidence: "Medium", method: null, parameter: null, evidence: null, description: "First sentence. Second.", remediation: null, references: [], cweId: null, wascId: null },
   guide: { plainTitle: "Guide title", summary: "Guide", whatHappened: "Guide", whyItMatters: "Guide", nextAction: "Guide", verify: [] },
   findings: [{ id, url: "http://x/", firstObservedAt: "2026-11-24T06:48:31.303Z" }],

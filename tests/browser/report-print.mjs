@@ -41,7 +41,7 @@ try {
     coverage: { analysed: 0, unanalysed: 1 },
     issues: [
       {
-        key: "a".repeat(64), assessmentId: id, website: "Print fixture", guide: null,
+        key: "a".repeat(64), assessmentId: id, targetId: id, website: "Print fixture", guide: null,
         scanner: { title: "<script>fixture()</script>", ruleId: "1", severity: "LOW", sourceSeverity: "Low", confidence: "HIGH", method: "GET", parameter: null, evidence: null, description: "Fixture only", remediation: "Long remediation text. ".repeat(1400) + "End of remediation.", references: [], cweId: null, wascId: null },
         findings: [{ id: findingId, url: "http://fixture.invalid/" + "a".repeat(1600), firstObservedAt: now }],
         endpoints: ["http://fixture.invalid/" + "a".repeat(1600)],

@@ -38,8 +38,8 @@ export function SiteDialog({
         </button>
       </div>
       <p>
-        Register a website in your workspace. You can authorize a security check
-        separately.
+        Register a website that you own or may test. Registering does not scan it.
+        You confirm your permission again before every scan.
       </p>
       <form
         onSubmit={async (e) => {
@@ -79,7 +79,12 @@ export function SiteDialog({
             type="url"
             maxLength={2048}
             placeholder="https://example.org"
+            aria-describedby="url-hint"
           />
+          <span id="url-hint" className="field-hint">
+            Full address with http:// or https://. Private and internal addresses
+            are refused, except the local demo.
+          </span>
         </label>
         {error && <p role="alert">{error}</p>}
         <button className="primary" disabled={busy}>
