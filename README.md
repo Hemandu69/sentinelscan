@@ -6,7 +6,7 @@ Docker Compose project `sentinelscan-infrastructure` for Docker Desktop in Linux
 |---|---|---|---|
 | postgres | 127.0.0.1:5432 | postgres:5432 | Data in the `pgdata` named volume |
 | zap | 127.0.0.1:8090 | zap:8090 | `zap-stable:2.17.0`, 3072 MiB limit, 1536 MiB heap, 2 threads per host, 1 host per scan, DOM XSS add-on uninstalled, 20 ms delay, passive limit 10 per rule |
-| juice-shop | 127.0.0.1:3001 | juice-shop:3000 | Scanner target is always `http://juice-shop:3000/` |
+| juice-shop | 127.0.0.1:3001 | juice-shop:3000 | Local demo. Scanner target `http://juice-shop:3000/` |
 
 These are configured values. Running containers may predate them, so read back the effective values during an approved integration window. DOM XSS testing is therefore excluded and must be disclosed. A one-request-per-second limit is not configured. The key reaches ZAP through a private in-memory file, never through process arguments.
 
@@ -22,12 +22,23 @@ docker --context desktop-linux compose up -d --no-recreate --wait --wait-timeout
 
 Plain `docker compose up` can replace a container whose configuration changed. Replacing ZAP discards its session and run evidence, so always keep `--no-recreate` unless a replacement is approved.
 
+## Outbound firewall
+
+Build once, and again after changing `egress-guard`:
+
+```powershell
+docker --context desktop-linux build --pull=false -t sentinelscan-egress-guard:1 egress-guard
+```
+
+It adds the Alpine package `nftables` to the local PostgreSQL image. The API runs it for each scan; it needs no service. `node .\verify-egress.cjs` proves it on throwaway containers, including a separate ZAP, and never touches the real one. After a scan ZAP stays locked until the next scan or a ZAP restart, which also blocks its add-on updates and scans run by hand.
+
 ## Scripts
 
 | Script | Behavior |
 |---|---|
 | `verify.ps1` | Checks existing containers, the database and ZAP credentials. Never creates or recreates anything. `-PersistenceRestart` also writes a marker in a diagnostic table and restarts PostgreSQL only. |
 | `verify-zap.cjs` | Read-only check that the key works and that missing or wrong keys are refused |
+| `verify-egress.cjs` | Proves the outbound firewall on throwaway containers it creates and removes |
 | `observe-zap-resources.cjs` | Read-only memory, state and run samples. `--count 1..120 --interval-seconds 1..60` |
 | `restrict-secret-access.ps1` | Reports, or with `-Apply` removes, one group's access to the backups and both `.env` files. Preserves every other entry. |
 | `rotate-zap-key.cjs` | Confirms the log override and the configured image is available locally, twice, before writing a new key. Then recreates ZAP and checks that the new key is absent from its log. Requires approval. |
