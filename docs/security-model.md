@@ -14,6 +14,10 @@ Ordinary destination validation checks HTTP(S) syntax and resolved IPv4 and IPv6
 
 Before import, verify that all results belong to the linked provider run and authorized scope. Treat stale IDs, mixed scope, incomplete reads and uncertain terminal outcomes as incomplete work. Explicit evidence of cancellation or failure must survive independently of the finding count.
 
+## Optional AI analysis
+
+Disabled by default and server-side only. When enabled and selected, sanitized alert text leaves this machine for the configured provider. See [finding intelligence](finding-intelligence.md).
+
 ## Evidence handling
 
 Consent tokens expire after five minutes and are consumed on submission. The backend locks the active target and checks its canonical URL before creating a pending assessment. Import rechecks consent and the provider fingerprint, reads the active run's attributed alert IDs before and after fetching alerts, and validates normalized URLs. A failed final transaction rolls back the saved run observations, findings and completion together. Local tracking cancellation is available for every open assessment and has no effect on the provider process. The session fingerprint is nonsecret and is never fetched or attached automatically by Watchtower.

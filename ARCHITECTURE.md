@@ -19,6 +19,7 @@ One Windows host runs a shared workspace. The Next.js Watchtower frontend commun
 | findings | Belongs to an assessment. A unique assessment/fingerprint pair supports idempotent persistence. |
 | assessment_runs | Additive migration. One Spider and one active receipt per assessment. A unique session, kind and ID tuple prevents reuse across assessments. |
 | run_evidence | Insert-only contract facts, outcome and digest per receipt. |
+| finding_analyses | Pending migration. Optional AI interpretation per finding, separate from scanner facts. |
 | reports | Belongs to an assessment. Reserved snapshot metadata. The current print view reconciles live application records and uses the browser print engine without writing this table. |
 
 ## Operator-run design
