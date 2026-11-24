@@ -3,11 +3,13 @@ import { collectEvidence, judge } from "./evidence.ts";
 import { readContainerLog } from "./run-log.ts";
 import { providerSession } from "./session.ts";
 import { ApiError } from "../../lib/errors.ts";
+import { demoTarget } from "../../lib/security/destination.ts";
 
 const zap = configuredZapClient();
 async function inspect() {
   console.log("Configured ZAP version", await zap.version());
-  const [mode, kind, id, ...extra] = process.argv.slice(2);
+  const [mode, kind, id, url, ...extra] = process.argv.slice(2);
+  const target = url ?? demoTarget;
   if (mode === "--evidence") {
     // Read-only rehearsal of contract v1. Nothing is stored, and no receipt is checked.
     if (![kind, id].every((v) => /^\d{1,12}$/.test(v ?? "")) || extra.length)
@@ -22,7 +24,7 @@ async function inspect() {
       () => providerSession(zap),
       readContainerLog,
       receipts,
-      "http://juice-shop:3000/",
+      target,
     );
     console.log(JSON.stringify({ facts, judgement: judge(facts, receipts) }));
     return;
@@ -45,7 +47,7 @@ async function inspect() {
         kind,
         id,
         outcome: matches[0].outcome,
-        ...(await zap.inspectDemoScope(kind, id)),
+        ...(await zap.inspectScope(kind, id, target)),
         ...(kind === "active" ? await zap.scanProgress(id) : {}),
       }),
     );

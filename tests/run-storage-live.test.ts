@@ -98,7 +98,7 @@ test.runIf(process.env.npm_lifecycle_event === "test:run-storage")(
               state: "RUNNING",
               progress: 20,
               reportedOrigin: null,
-              exactDemoUrl: false,
+              exactRootUrl: false,
               outcome: "RUNNING",
               requests: 5,
               alerts: 0,
@@ -125,7 +125,7 @@ test.runIf(process.env.npm_lifecycle_event === "test:run-storage")(
                   "/home/zap/.ZAP/session/demo.session",
                 inspectAlertIds: async () => 0,
                 readAttributedFindings: async () => [],
-                inspectDemoScope: async () => ({
+                inspectScope: async () => ({
                   evidence: "OBSERVED_TARGET_ORIGIN",
                   count: 5,
                 }),

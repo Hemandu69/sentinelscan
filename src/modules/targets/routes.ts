@@ -2,8 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { Prisma, type PrismaClient } from "@prisma/client";
 import { ApiError } from "../../lib/errors.ts";
 import {
-  registeredScope,
-  type Resolve,
+  registrationUrl,
 } from "../../lib/security/destination.ts";
 import { z } from "zod";
 import type { confirmations } from "../assessments/consent.ts";
@@ -16,7 +15,6 @@ export function registerTargets(
   app: FastifyInstance,
   db: PrismaClient,
   consent: ReturnType<typeof confirmations>,
-  resolve?: Resolve,
 ) {
   const base = "/api/v1/targets";
   app.get(base, async () =>
@@ -27,7 +25,8 @@ export function registerTargets(
   );
   app.post(base, async (req, reply) => {
     const { displayName, url } = targetSchema.parse(req.body);
-    const canonicalUrl = await registeredScope(url, resolve);
+    // Registration names a website. It authorizes nothing and makes nothing eligible for a scan.
+    const canonicalUrl = await registrationUrl(url);
     try {
       const target = await db.target.create({
         data: { displayName, canonicalUrl },

@@ -5,7 +5,8 @@ import { ApiError } from "../../lib/errors.ts";
 import type { Resolve } from "../../lib/security/destination.ts";
 import type { confirmations } from "../assessments/consent.ts";
 import { assessmentSchema, createAssessment } from "../assessments/routes.ts";
-import { approvedTarget, configuration, type Job, type Orchestrator } from "./orchestrator.ts";
+import { safety } from "./exclusions.ts";
+import { configuration, type Job, type Orchestrator } from "./orchestrator.ts";
 
 const launchSchema = assessmentSchema.extend({
   configuration: z.literal(configuration.id),
@@ -38,8 +39,21 @@ export function registerScans(
   scans: Orchestrator,
   resolve?: Resolve,
 ) {
+  const registered = async (value: unknown) => {
+    const { id } = params.parse(value);
+    const row = await db.target.findFirst({
+      where: { id, archivedAt: null },
+      select: { canonicalUrl: true },
+    });
+    if (!row) throw new ApiError(404, "TARGET_NOT_FOUND");
+    return row.canonicalUrl;
+  };
+  // Being registered or eligible authorizes nothing. Every scan needs its own consent.
+  app.get("/api/v1/targets/:id/eligibility", async (req, reply) => {
+    const url = await registered(req.params);
+    return reply.header("Cache-Control", "no-store").send({ url, ...(await scans.eligibility(url)), safety: safety(url).description });
+  });
   app.get("/api/v1/scans/policy", async () => ({
-    approvedTargets: [approvedTarget],
     configuration: {
       id: configuration.id,
       name: configuration.name,
@@ -47,20 +61,23 @@ export function registerScans(
         "Finds pages first, then tests them with " + configuration.rules + " active rules.",
         "One website at a time, two requests in parallel, 20 ms apart.",
         "ZAP is limited to 3 GiB of memory. The scan stops above 90%.",
+        "A firewall limits ZAP to the confirmed address. Every other destination is refused.",
         "DOM-based XSS (rule 40026) is not tested.",
       ],
     },
   }));
-  app.get("/api/v1/scans/readiness", async (_req, reply) =>
-    reply.header("Cache-Control", "no-store").send(await scans.readiness()),
+  app.get("/api/v1/targets/:id/readiness", async (req, reply) =>
+    reply
+      .header("Cache-Control", "no-store")
+      .send(await scans.readiness(await registered(req.params))),
   );
   app.post("/api/v1/scans", async (req, reply) => {
     const { requestKey, targetId, url, authorized, authorizationTextVersion, confirmationToken } =
       launchSchema.parse(req.body);
     const input = { targetId, url, authorized, authorizationTextVersion, confirmationToken };
-    // Exactly the approved address. Other registered websites have no approved scan.
-    if (input.url !== approvedTarget) throw new ApiError(403, "SCAN_TARGET_NOT_APPROVED");
-    const result = await scans.launch(requestKey, () => createAssessment(db, consent, input, resolve));
+    // The address must be exactly the registered one. Consent is bound to it and used once.
+    if ((await registered({ id: targetId })) !== url) throw new ApiError(409, "TARGET_CHANGED");
+    const result = await scans.launch(requestKey, url, () => createAssessment(db, consent, input, resolve));
     return reply.code(result.repeated ? 200 : 202).send({ assessmentId: result.assessmentId });
   });
   app.get("/api/v1/assessments/:id/scan", async (req, reply) => {

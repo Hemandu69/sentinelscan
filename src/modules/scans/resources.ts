@@ -34,14 +34,25 @@ export const dockerResources = {
       heap: /-Xmx(\d+m)\b/.exec(match[3])?.[1] ?? null,
     };
   },
-  async sample() {
+  async demoAddress() {
+    return docker(
+      "inspect",
+      "--format",
+      "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}",
+      shop,
+    );
+  },
+  // The demo website must be running only when it is the website being scanned.
+  async sample(demo: boolean) {
     const state = await docker(
       "inspect",
       "--format",
       "{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{end}} {{.State.OOMKilled}}",
       zap,
     );
-    const target = await docker("inspect", "--format", "{{.State.Status}}", shop);
+    const target = demo
+      ? await docker("inspect", "--format", "{{.State.Status}}", shop)
+      : "running";
     const usage = await docker("stats", "--no-stream", "--format", "{{.MemPerc}}", zap);
     const match = /^(\d{1,3}(?:\.\d+)?)%$/.exec(usage);
     return {

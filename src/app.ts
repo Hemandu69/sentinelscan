@@ -13,6 +13,7 @@ import { readContainerLog } from "./integrations/zap/run-log.ts";
 import { createRunRecords } from "./modules/assessments/run-records.ts";
 import { registerComparison } from "./modules/assessments/comparison.ts";
 import { createOrchestrator } from "./modules/scans/orchestrator.ts";
+import { createEgress } from "./modules/scans/egress.ts";
 import { dockerResources } from "./modules/scans/resources.ts";
 import { registerScans } from "./modules/scans/routes.ts";
 import { registerDashboard } from "./modules/dashboard/routes.ts";
@@ -97,7 +98,7 @@ export function buildApp(
   registerHealth(app, db);
   registerDashboard(app, db);
   registerZap(app, zap);
-  registerTargets(app, db, consent, resolve);
+  registerTargets(app, db, consent);
   registerAssessments(app, db, consent, resolve);
   registerRecords(app, db);
   registerIssues(app, db, ai);
@@ -116,6 +117,8 @@ export function buildApp(
     getSession,
     readLog: readContainerLog,
     resources: dockerResources,
+    egress: createEgress(),
+    resolve,
   });
   registerRunRecords(app, db, zap, getSession, readContainerLog, runs, scans.isActive);
   registerScans(app, db, consent, scans, resolve);

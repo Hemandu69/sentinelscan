@@ -3,10 +3,9 @@ import type { PrismaClient } from "@prisma/client";
 import { z } from "zod";
 import type { ZapClient } from "../../integrations/zap/client.ts";
 import { ApiError } from "../../lib/errors.ts";
-import { registeredScope } from "../../lib/security/destination.ts";
-import { version as consentVersion } from "./consent.ts";
+import { demoTarget as demo, registeredScope } from "../../lib/security/destination.ts";
+import { acceptedVersions } from "./consent.ts";
 
-const demo = "http://juice-shop:3000/";
 const params = z.strictObject({
   id: z.uuid(),
   kind: z.enum(["spider", "active"]),
@@ -35,7 +34,7 @@ export function registerObservation(
       if (!assessment) throw new ApiError(404, "ASSESSMENT_NOT_FOUND");
       if (
         !assessment.authorizationConfirmedAt ||
-        assessment.authorizationTextVersion !== consentVersion ||
+        !acceptedVersions.includes(assessment.authorizationTextVersion) ||
         assessment.target.archivedAt ||
         assessment.target.canonicalUrl !== demo ||
         assessment.targetUrlSnapshot !== demo

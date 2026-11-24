@@ -11,12 +11,11 @@ import {
   judge,
 } from "../../integrations/zap/evidence.ts";
 import { readContainerLog } from "../../integrations/zap/run-log.ts";
-import { registeredScope } from "../../lib/security/destination.ts";
+import { demoTarget, registeredScope } from "../../lib/security/destination.ts";
 import { ApiError } from "../../lib/errors.ts";
-import { version as consentVersion } from "./consent.ts";
+import { acceptedVersions } from "./consent.ts";
 import { persistFinalFindingsTx } from "./persist-findings.ts";
 
-const demo = "http://juice-shop:3000/";
 const kinds = z.enum(["spider", "active"]);
 type Kind = z.infer<typeof kinds>;
 type Run = {
@@ -35,7 +34,7 @@ const binding = z.strictObject({
   scanId: z.string().regex(/^\d{1,12}$/),
   sessionKey: z.string().regex(/^[a-f0-9]{64}$/),
   confirmedOperatorReceipt: z.literal(true),
-  target: z.literal(demo),
+  target: z.literal(demoTarget),
 });
 async function runs(tx: Tx, id: string) {
   return tx.$queryRaw<
@@ -44,16 +43,19 @@ async function runs(tx: Tx, id: string) {
 }
 async function eligible(tx: Tx, id: string) {
   const [row] = await tx.$queryRaw<
-    { status: string; eligible: boolean }[]
-  >`SELECT a.status, (a.target_url_snapshot=${demo} AND t.canonical_url=${demo} AND t.archived_at IS NULL AND a.authorization_confirmed_at IS NOT NULL AND a.authorization_text_version=${consentVersion}) AS eligible FROM assessments a JOIN targets t ON a.target_id=t.id WHERE a.id=${id}::uuid FOR UPDATE OF a,t`;
+    { status: string; target: string; eligible: boolean }[]
+  >`SELECT a.status, a.target_url_snapshot AS target, (a.target_url_snapshot=t.canonical_url AND t.archived_at IS NULL AND a.authorization_confirmed_at IS NOT NULL AND a.authorization_text_version=ANY(${acceptedVersions}::text[])) AS eligible FROM assessments a JOIN targets t ON a.target_id=t.id WHERE a.id=${id}::uuid FOR UPDATE OF a,t`;
   if (!row) throw new ApiError(404, "ASSESSMENT_NOT_FOUND");
   if (!row.eligible) throw new ApiError(403, "ASSESSMENT_SCOPE_NOT_AUTHORIZED");
-  try {
-    await registeredScope(demo);
-  } catch {
-    throw new ApiError(403, "DEMO_SCOPE_DISABLED");
-  }
-  return row.status;
+  // Public websites were validated, and their addresses enforced, when their scan started.
+  // Their receipts can only come from that scan.
+  if (row.target === demoTarget)
+    try {
+      await registeredScope(demoTarget);
+    } catch {
+      throw new ApiError(403, "DEMO_SCOPE_DISABLED");
+    }
+  return row;
 }
 // Cancelling is local bookkeeping. It needs no provider access and stays available
 // when the target is archived or outside the demo scope.
@@ -64,7 +66,7 @@ async function lockedStatus(tx: Tx, id: string) {
   if (!row) throw new ApiError(404, "ASSESSMENT_NOT_FOUND");
   return row.status;
 }
-async function observe(zap: ZapClient, kind: Kind, id: string) {
+async function observe(zap: ZapClient, kind: Kind, id: string, target: string) {
   const matches = (await zap.inspectRuns(kind)).filter((row) => row.id === id);
   if (matches.length !== 1)
     throw new ApiError(
@@ -72,9 +74,9 @@ async function observe(zap: ZapClient, kind: Kind, id: string) {
       matches.length ? "ZAP_RUN_AMBIGUOUS" : "ZAP_RUN_NOT_FOUND",
     );
   const row = matches[0];
-  if (row.reportedOrigin && row.reportedOrigin !== new URL(demo).origin)
+  if (row.reportedOrigin && row.reportedOrigin !== new URL(target).origin)
     throw new ApiError(409, "ZAP_RUN_OUTSIDE_TARGET");
-  if (row.reportedOrigin && !row.exactDemoUrl)
+  if (row.reportedOrigin && !row.exactRootUrl)
     throw new ApiError(409, "ZAP_SCOPE_NOT_EXACT");
   return {
     state: row.state,
@@ -115,13 +117,17 @@ export function createRunRecords(
   async function associate(
     id: string,
     input: Pick<z.infer<typeof binding>, "kind" | "scanId" | "sessionKey">,
+    manual = false,
   ): Promise<Run> {
-    const { status: initial, existing } = await db.$transaction(
+    const { status: initial, target, existing } = await db.$transaction(
       async (tx) => ({
-        status: await eligible(tx, id),
+        ...(await eligible(tx, id)),
         existing: (await runs(tx, id)).find((r) => r.kind === input.kind),
       }),
     );
+    // Scans run by hand have no enforced destination, so only the demo accepts them.
+    if (manual && target !== demoTarget)
+      throw new ApiError(403, "ASSESSMENT_SCOPE_NOT_AUTHORIZED");
     if (existing) {
       if (
         existing.scan_id === input.scanId &&
@@ -136,10 +142,10 @@ export function createRunRecords(
         throw new ApiError(409, "ZAP_SESSION_CHANGED");
     };
     await verify();
-    const sample = await observe(zap, input.kind, input.scanId);
+    const sample = await observe(zap, input.kind, input.scanId, target);
     await verify();
     return db.$transaction(async (tx) => {
-      const status = await eligible(tx, id),
+      const { status } = await eligible(tx, id),
         current = await runs(tx, id);
       const old = current.find((r) => r.kind === input.kind);
       if (
@@ -170,23 +176,24 @@ export function createRunRecords(
   }
   async function sync(id: string) {
     const snapshot = await db.$transaction(async (tx) => ({
-      status: await eligible(tx, id),
+      ...(await eligible(tx, id)),
       runs: await runs(tx, id),
     }));
-    if (!snapshot.runs.length || isClosed(snapshot.status)) return snapshot;
+    if (!snapshot.runs.length || isClosed(snapshot.status))
+      return { status: snapshot.status, runs: snapshot.runs };
     const session = await getSession();
     if (snapshot.runs.some((r) => r.session_key !== session))
       throw new ApiError(409, "ZAP_SESSION_CHANGED");
     const samples = await Promise.all(
       snapshot.runs.map(async (r) => ({
         ...r,
-        ...(await observe(zap, r.kind, r.scan_id)),
+        ...(await observe(zap, r.kind, r.scan_id, snapshot.target)),
       })),
     );
     if ((await getSession()) !== session)
       throw new ApiError(409, "ZAP_SESSION_CHANGED");
     return db.$transaction(async (tx) => {
-      let status = await eligible(tx, id);
+      let { status } = await eligible(tx, id);
       if (!isClosed(status)) {
         const liveRuns = await runs(tx, id);
         if (liveRuns.length !== samples.length)
@@ -250,7 +257,7 @@ export function createRunRecords(
   const importing = new Set<string>();
   async function importRun(id: string) {
     const snapshot = await db.$transaction(async (tx) => ({
-      status: await eligible(tx, id),
+      ...(await eligible(tx, id)),
       runs: await runs(tx, id),
     }));
     if (snapshot.runs.length !== 2)
@@ -290,7 +297,7 @@ export function createRunRecords(
           getSession,
           readLog,
           receipts,
-          demo,
+          snapshot.target,
         );
         if (snapshot.runs.some((run) => run.session_key !== facts.sessionKey))
           throw new ApiError(409, "ZAP_SESSION_CHANGED");
@@ -314,7 +321,7 @@ export function createRunRecords(
         throw new ApiError(409, "ZAP_SUCCESS_OR_SCOPE_UNVERIFIED", unverified);
       const findings = ended
         ? []
-        : await zap.readAttributedFindings(receipts.active.scanId, demo);
+        : await zap.readAttributedFindings(receipts.active.scanId, snapshot.target);
       if (!ended && findings.length !== initial.facts.attributedAlerts)
         throw new ApiError(409, "ZAP_ALERT_SET_CHANGED");
       const confirmed = await collect();
@@ -322,7 +329,7 @@ export function createRunRecords(
         throw new ApiError(409, "ZAP_EVIDENCE_CHANGED");
       const observedAt = new Date();
       return await db.$transaction(async (tx) => {
-        const status = await eligible(tx, id);
+        const { status } = await eligible(tx, id);
         if (status === "COMPLETED")
           return {
             status,
@@ -412,7 +419,7 @@ export function registerRunRecords(
   });
   app.post(base + "/zap-association", async (req) => {
     const id = own(req.params);
-    return publicRun(await records.associate(id, binding.parse(req.body)));
+    return publicRun(await records.associate(id, binding.parse(req.body), true));
   });
   app.post(base + "/zap-sync", async (req) => {
     const result = await records.sync(own(req.params));

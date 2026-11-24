@@ -238,7 +238,7 @@ test("compatibility probe reads existing run metadata without printing target va
         state: "FINISHED",
         progress: null,
         reportedOrigin: "https://fixture.invalid",
-        exactDemoUrl: false,
+        exactRootUrl: false,
         requests: null,
         alerts: null,
         outcome: "UNKNOWN",
@@ -325,7 +325,7 @@ test.each([
 ] as [string[], string][])(
   "spider scope from run-specific results %j",
   async (results, evidence) => {
-    expect(await reply({ results }).inspectDemoScope("spider", "0")).toEqual({
+    expect(await reply({ results }).inspectScope("spider", "0", "http://juice-shop:3000/")).toEqual({
       count: results.length,
       evidence,
     });
@@ -354,7 +354,7 @@ test.each([
       expect(url.searchParams.get("id")).toBe("41");
       return Response.json({ message: { id: "41", requestHeader } });
     });
-    expect(await client.inspectDemoScope("active", "0")).toEqual({
+    expect(await client.inspectScope("active", "0", "http://juice-shop:3000/")).toEqual({
       count: 1,
       evidence,
     });
@@ -380,18 +380,18 @@ function messages(count: number, header = inScope, change = false) {
 }
 test("active scope reads every attributed message beyond the former limit exactly once", async () => {
   const { client, read } = messages(1500);
-  expect(await client.inspectDemoScope("active", "0")).toEqual({ evidence: "OBSERVED_TARGET_ORIGIN", count: 1500 });
+  expect(await client.inspectScope("active", "0", "http://juice-shop:3000/")).toEqual({ evidence: "OBSERVED_TARGET_ORIGIN", count: 1500 });
   expect(read).toHaveLength(1500);
   expect(new Set(read).size).toBe(1500);
 });
 test("one message outside the target decides the whole scan", async () => {
   const { client } = messages(400, (id) => `GET http://${id === "399" ? "elsewhere.invalid" : "juice-shop:3000"}/ HTTP/1.1`);
-  expect((await client.inspectDemoScope("active", "0")).evidence).toBe("OUT_OF_SCOPE");
+  expect((await client.inspectScope("active", "0", "http://juice-shop:3000/")).evidence).toBe("OUT_OF_SCOPE");
 });
 test("a failed read or a changed list never yields partial scope", async () => {
-  await expect(messages(400, (id) => (id === "200" ? "" : "GET http://juice-shop:3000/ HTTP/1.1")).client.inspectDemoScope("active", "0")).rejects.toThrow("ZAP_UNAVAILABLE");
-  await expect(messages(5, undefined, true).client.inspectDemoScope("active", "0")).rejects.toThrow("OBSERVATION_CHANGED");
-  await expect(messages(16001).client.inspectDemoScope("active", "0")).rejects.toThrow("ZAP_MALFORMED_RESPONSE");
+  await expect(messages(400, (id) => (id === "200" ? "" : "GET http://juice-shop:3000/ HTTP/1.1")).client.inspectScope("active", "0", "http://juice-shop:3000/")).rejects.toThrow("ZAP_UNAVAILABLE");
+  await expect(messages(5, undefined, true).client.inspectScope("active", "0", "http://juice-shop:3000/")).rejects.toThrow("OBSERVATION_CHANGED");
+  await expect(messages(16001).client.inspectScope("active", "0", "http://juice-shop:3000/")).rejects.toThrow("ZAP_MALFORMED_RESPONSE");
 });
 const rule = (status: string) => ({ Plugin: ["Rule", "1", "release", status, "5", "1", "0"] });
 test("scan progress reports host and rule counts without an outcome", async () => {
@@ -431,10 +431,10 @@ test("active messages keep only origin, differing hosts and times", async () => 
       },
     });
   });
-  const result = await client.readActiveMessages("0");
+  const result = await client.readActiveMessages("0", "http://juice-shop:3000/");
   expect(result).toEqual({ evidence: "OBSERVED_TARGET_ORIGIN", count: 2, mismatches: [{ messageId: "1", host: "169.254.169.254", sentAt: 1795502186864 }] });
   expect(JSON.stringify(result)).not.toMatch(/secret|private/);
-  expect(await client.inspectDemoScope("active", "0")).toEqual({ evidence: "OUT_OF_SCOPE", count: 2 });
+  expect(await client.inspectScope("active", "0", "http://juice-shop:3000/")).toEqual({ evidence: "OUT_OF_SCOPE", count: 2 });
 });
 test("scan progress keeps the two contract rules and the request total", async () => {
   const plugin = (id: string, requests: string) => ({ Plugin: ["Name " + id, id, "release", "Complete", "5", requests, "0"] });

@@ -21,6 +21,19 @@ const malformed = () => new ApiError(502, "ZAP_MALFORMED_RESPONSE");
 const oversized = () => new ApiError(502, "ZAP_RESPONSE_TOO_LARGE");
 const denied = () => new ApiError(502, "ZAP_INVALID_CREDENTIALS");
 const unavailable = () => new ApiError(503, "ZAP_UNAVAILABLE");
+// A scan covers one whole origin, named by its canonical root address.
+function rootUrl(value: string) {
+  const url = URL.canParse(value) ? new URL(value) : null;
+  if (
+    !url ||
+    !["http:", "https:"].includes(url.protocol) ||
+    url.username ||
+    url.password ||
+    value !== url.origin + "/"
+  )
+    throw new ApiError(422, "DESTINATION_PROHIBITED");
+  return url;
+}
 async function readJson(response: Response, limit: number) {
   if (Number(response.headers.get("content-length")) > limit) throw oversized();
   if (!response.body) throw malformed();
@@ -115,8 +128,8 @@ export function createZapClient(
   }
   // Reads every message attributed to one active scan, or none. Only the request URL's
   // origin, the Host header and the sending time are kept.
-  async function readActiveMessages(scanId: string) {
-    const target = "http://juice-shop:3000";
+  async function readActiveMessages(scanId: string, authorizedUrl: string) {
+    const { origin: target, host: targetHost } = rootUrl(authorizedUrl);
     const messageIds = async () =>
       (
         await view(
@@ -170,7 +183,7 @@ export function createZapClient(
         .filter((line) => /^host:/i.test(line))
         .map((line) => line.slice(5).trim().toLowerCase());
       if (hosts.length > 1) unknown++;
-      else if (hosts.length && hosts[0] !== "juice-shop:3000")
+      else if (hosts.length && hosts[0] !== targetHost)
         mismatches.push({
           messageId: id,
           host: hosts[0].slice(0, 253),
@@ -218,13 +231,12 @@ export function createZapClient(
         params,
       )
     ).scan;
-  const demoTarget = "http://juice-shop:3000/";
   const number = z
     .union([z.string(), z.number()])
     .transform(Number)
     .pipe(z.number().int().nonnegative());
   return {
-    // The only state-changing provider operations. Targets and options are fixed here.
+    // The only state-changing provider operations. Options are fixed here, and the target is a validated root address.
     async newSession(name: string) {
       z.string().regex(/^sentinelscan-[a-z0-9-]{1,60}$/).parse(name);
       await view("core/action/newSession", z.object({ Result: z.literal("OK") }), {
@@ -232,10 +244,28 @@ export function createZapClient(
         overwrite: "false",
       });
     },
-    startSpider: () =>
-      started("spider/action/scan", { url: demoTarget, recurse: "true" }),
-    startActive: () =>
-      started("ascan/action/scan", { url: demoTarget, recurse: "true" }),
+    startSpider: (target: string) =>
+      started("spider/action/scan", { url: rootUrl(target).href, recurse: "true" }),
+    startActive: (target: string) =>
+      started("ascan/action/scan", { url: rootUrl(target).href, recurse: "true" }),
+    // Sets the safety options of the next scan and proves that ZAP accepted exactly them.
+    async configureScan(options: { exclusions: readonly string[]; postForms: boolean }) {
+      const ok = z.object({ Result: z.literal("OK") });
+      for (const component of ["spider", "ascan"]) {
+        await view(component + "/action/clearExcludedFromScan", ok);
+        for (const regex of options.exclusions)
+          await view(component + "/action/excludeFromScan", ok, { regex });
+        const { excludedFromScan } = await view(
+          component + "/view/excludedFromScan",
+          z.object({ excludedFromScan: z.array(z.string()).max(64) }),
+        );
+        if (JSON.stringify([...excludedFromScan].sort()) !== JSON.stringify([...options.exclusions].sort()))
+          throw new ApiError(409, "SCAN_EXCLUSIONS_UNVERIFIED");
+      }
+      await view("spider/action/setOptionPostForm", ok, { Boolean: String(options.postForms) });
+      const { PostForm } = await view("spider/view/optionPostForm", z.object({ PostForm: z.string() }));
+      if (PostForm !== String(options.postForms)) throw new ApiError(409, "SCAN_EXCLUSIONS_UNVERIFIED");
+    },
     async stopScan(kind: "spider" | "active", scanId: string) {
       z.string().regex(/^\d{1,12}$/).parse(scanId);
       await view(
@@ -309,10 +339,13 @@ export function createZapClient(
           ])
           .safeParse(String(row.state ?? "").toUpperCase());
         let reportedOrigin: string | null = null;
+        let exactRootUrl = false;
         if (typeof row.url === "string" && URL.canParse(row.url)) {
           const url = new URL(row.url);
-          if (["http:", "https:"].includes(url.protocol))
+          if (["http:", "https:"].includes(url.protocol)) {
             reportedOrigin = url.origin;
+            exactRootUrl = row.url === url.origin || row.url === url.origin + "/";
+          }
         }
         return {
           id: id.success ? id.data : null,
@@ -322,9 +355,7 @@ export function createZapClient(
               : (progressSchema.safeParse(row.progress).data ?? null),
           reportedOrigin,
           outcome: inventoryOutcome(row.state),
-          exactDemoUrl:
-            row.url === "http://juice-shop:3000/" ||
-            row.url === "http://juice-shop:3000",
+          exactRootUrl,
           state: state.success ? state.data : null,
           requests: total(row.reqCount),
           alerts: total(row.alertCount),
@@ -339,11 +370,11 @@ export function createZapClient(
     },
     // Request history can corroborate destination independently of alert count.
     // Summarize locally so URLs, query strings, headers and bodies stay private.
-    async inspectDemoScope(kind: "spider" | "active", scanId: string) {
+    async inspectScope(kind: "spider" | "active", scanId: string, authorizedUrl: string) {
       z.string()
         .regex(/^\d{1,12}$/)
         .parse(scanId);
-      const target = "http://juice-shop:3000";
+      const target = rootUrl(authorizedUrl).origin;
       function classify(urls: string[]) {
         if (!urls.length) return { evidence: "EMPTY", count: 0 };
         let unknown = false;
@@ -370,7 +401,7 @@ export function createZapClient(
         return classify(results);
       }
       // Without contract reconciliation any differing Host header stays out of scope.
-      const { evidence, count, mismatches } = await readActiveMessages(scanId);
+      const { evidence, count, mismatches } = await readActiveMessages(scanId, authorizedUrl);
       return {
         evidence: mismatches.length ? "OUT_OF_SCOPE" : evidence,
         count,

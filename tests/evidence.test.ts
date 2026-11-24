@@ -207,7 +207,7 @@ function provider(change: Partial<Record<keyof ZapClient, unknown>> = {}) {
     inspectRuns: async (kind: string) => [row(kind)],
     inspectAlertIds: async () => 24,
     scanProgress: async () => facts().progress,
-    inspectDemoScope: async () => facts().scope.spider,
+    inspectScope: async () => facts().scope.spider,
     readActiveMessages: async () => facts().scope.active,
     mentionsCredential: (text: string) => text.includes("fixture-key"),
     ...change,

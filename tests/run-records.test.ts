@@ -26,6 +26,7 @@ function setup() {
   const updateReceipt = vi.fn(() => true);
   const state = {
     authorized: true,
+    target,
     exists: true,
     startedAt: null as Date | null,
     status: "PENDING",
@@ -43,7 +44,7 @@ function setup() {
           const sql = parts.join("?");
           if (sql.includes("FROM assessment_runs")) return draft.runs;
           if (sql.includes("AS eligible"))
-            return [{ status: draft.status, eligible: draft.authorized }];
+            return [{ status: draft.status, target: state.target, eligible: draft.authorized }];
           if (sql.includes("target_url_snapshot FROM assessments"))
             return [{ status: draft.status, target_url_snapshot: target }];
           if (sql.startsWith("SELECT status FROM assessments"))
@@ -106,7 +107,7 @@ function setup() {
     state: "RUNNING",
     progress: 20,
     reportedOrigin: "http://juice-shop:3000",
-    exactDemoUrl: true,
+    exactRootUrl: true,
     outcome: "RUNNING",
     requests: 5,
     alerts: 0,
@@ -129,7 +130,7 @@ function setup() {
         },
       ],
     })),
-    inspectDemoScope: async () => ({ evidence: "OBSERVED_TARGET_ORIGIN", count: 5 }),
+    inspectScope: async () => ({ evidence: "OBSERVED_TARGET_ORIGIN", count: 5 }),
     readActiveMessages: vi.fn(async () => ({
       evidence: "OBSERVED_TARGET_ORIGIN",
       count: 5,
@@ -524,6 +525,18 @@ test("a run that stops being listed as RUNNING shows an unknown outcome and stay
     expect((await f.call("zap-import")).json().code).toBe(
       "ZAP_SUCCESS_OR_SCOPE_UNVERIFIED",
     );
+  } finally {
+    await f.close();
+  }
+});
+test("receipts entered by hand are refused for any website but the demo", async () => {
+  const f = setup();
+  try {
+    f.state.target = "https://www.hemandu.com/";
+    const response = await f.bind("spider");
+    expect([response.statusCode, response.json().code]).toEqual([403, "ASSESSMENT_SCOPE_NOT_AUTHORIZED"]);
+    expect(f.stamp).not.toHaveBeenCalled();
+    expect(f.state.runs).toEqual([]);
   } finally {
     await f.close();
   }
