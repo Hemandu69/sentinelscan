@@ -82,8 +82,8 @@ export function SiteDialog({
             aria-describedby="url-hint"
           />
           <span id="url-hint" className="field-hint">
-            Full address with http:// or https://, for example a personal, college
-            or company website. Local and internal addresses are refused.
+            Full address with http:// or https://. Private and internal addresses
+            are refused, except the demo, http://juice-shop:3000/.
           </span>
         </label>
         {error && <p role="alert">{error}</p>}

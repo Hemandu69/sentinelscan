@@ -19,7 +19,7 @@ Open http://127.0.0.1:3000. The browser defaults to http://127.0.0.1:4000 for Fa
 | Database | GET /health/database |
 | ZAP security service | GET /health/zap |
 
-Refresh retries the registry and the three service reads independently. The site register treats an empty array as a verified zero. A failed read shows an unavailable state. GET /api/v1/dashboard supplies assessment totals and severity counts from completed assessments. The dashboard shows a finding count only once an assessment has completed. To compare the endpoint with independent SQL counts, run npm.cmd run test:dashboard:live in the API repository while the workspace is idle.
+Refresh retries the registry and the three service reads independently. The site register treats an empty array as a verified zero. A failed read shows an unavailable state. GET /api/v1/dashboard supplies assessment totals and severity counts from completed assessments. The dashboard shows findings only once an assessment has completed, and the latest assessment from GET /api/v1/assessments. To compare the endpoint with independent SQL counts, run npm.cmd run test:dashboard:live in the API repository while the workspace is idle.
 
 The theme is stored on this device. The watchtower artwork is bundled locally.
 
@@ -35,11 +35,11 @@ Open **Websites**, then a website.
 | Findings | Original scanner records with search and severity filter |
 | Reports | Generate, preview and download PDF reports |
 
-Scanning is offered only for websites that pass validation: Eligible, Target validation failed, or Scan unavailable with its reason. Authorization is confirmed before every scan. The start dialog shows the exact address, the fixed configuration, readiness and the consent wording. Percentages come from the scanner; otherwise the step is described in words.
+Scanning is limited to the Juice Shop demo. The start dialog shows the exact address, the fixed configuration, readiness and the consent wording. Percentages come from the scanner; otherwise the step is described in words.
 
-## Run records
+## Saved scan records
 
-Saved scan records list operator receipts. Enter the run ID and session fingerprint that you captured with `npm.cmd run zap:session` in the API checkout. The page never fetches or fills in a fingerprint. Cancel local tracking closes the record in SentinelScan only. It never stops a ZAP scan. A saved run that is no longer running has an unknown outcome.
+Assessment details list the saved Spider and Active Scan under Advanced. Cancel local tracking closes the record in SentinelScan only. It never stops a ZAP scan.
 
 ## Checks
 
@@ -59,4 +59,4 @@ With the built server running, the fixture browser checks need an existing Playw
 node tests/browser/app.mjs <playwright-core index.js> <chrome.exe>
 ```
 
-The production server binds to loopback. Screenshots in screenshots/ show the built light and dark desktop layouts and mobile layout during an unavailable API reading.
+The production server binds to loopback. Screenshots in screenshots/ show the dashboard with the genuine assessment in light, dark and mobile layouts.

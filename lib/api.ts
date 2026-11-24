@@ -11,14 +11,11 @@ export type Site = {
 export function timeoutFor(path: string) {
   if (path.endsWith("/zap-import")) return 900000;
   if (path.endsWith("/reports")) return 90000;
-  if (path === "/api/v1/scans" || path.endsWith("/readiness") || path.endsWith("/eligibility")) return 90000;
+  if (path === "/api/v1/scans" || path === "/api/v1/scans/readiness") return 90000;
   if (path.endsWith("/scan") || path.endsWith("/scan/cancel")) return 20000;
   // Two attempts, each with one transport retry on the server.
   if (/\/issues\/[a-f0-9]{64}\/analysis$/.test(path)) return 600000;
-  if (path.endsWith("/zap-association") || path.endsWith("/zap-sync"))
-    return 60000;
-  if (path.includes("/zap-observations/") || path.includes("/zap/scans"))
-    return 20000;
+  if (path.endsWith("/zap-sync")) return 60000;
   return 8000;
 }
 export class RequestFailure extends Error {
@@ -134,10 +131,6 @@ async function open(
         "The ZAP container log could not be read. Nothing was imported.",
       EVIDENCE_STORAGE_UNAVAILABLE:
         "The evidence table is not available. Apply the reviewed migration first.",
-      ZAP_RUN_ALREADY_BOUND:
-        "This run or assessment slot already has a different binding.",
-      SPIDER_RECEIPT_REQUIRED:
-        "Save the Spider receipt from the same session first.",
       ZAP_RUN_NOT_FOUND:
         "This run is absent from the current provider inventory.",
       ZAP_RUN_OUTSIDE_TARGET: "The provider reported a different target.",
@@ -146,7 +139,7 @@ async function open(
       ASSESSMENT_INELIGIBLE:
         "This assessment's current state prevents that operation. Reload its latest status.",
       BOTH_RUN_RECEIPTS_REQUIRED:
-        "Record both the Spider and active run receipts before importing findings.",
+        "This assessment has no complete pair of scan records to import.",
       IMPORT_BUSY:
         "Another import is in progress. Wait for it to finish before retrying.",
       OBSERVATION_CHANGED:
@@ -212,6 +205,7 @@ async function open(
         "The report did not match the recorded findings, so no PDF was created.",
       REPORT_RENDER_FAILED: "The PDF could not be generated.",
       REPORT_STORAGE_FAILED: "The PDF could not be stored.",
+      SCAN_TARGET_NOT_APPROVED: "Scanning is not approved for this website.",
       SCAN_ALREADY_RUNNING: "Another scan is already running.",
       SCAN_NOT_READY: "The scan cannot start yet. Nothing was changed.",
       SCAN_NOT_RUNNING: "No scan is running for this assessment.",
@@ -223,7 +217,7 @@ async function open(
       ISSUE_NOT_FOUND: "This issue no longer exists. Reload the page.",
       TOO_MANY_FINDINGS: "There are too many findings to show at once.",
       ZAP_SESSION_NOT_SAVED:
-        "ZAP has no saved session. Create a named session before running scans.",
+        "ZAP has no saved session. Start a new security scan to create one.",
       ZAP_RUN_AMBIGUOUS: "ZAP lists this run ID more than once.",
       UNVERIFIED_PROVIDER_VERSION:
         "ZAP is not the version this workspace was verified with.",

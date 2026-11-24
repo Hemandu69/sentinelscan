@@ -45,7 +45,7 @@ function reset(change = {}) {
     tamper: false,
     ready: [],
     scan: null,
-    eligibility: { state: "ELIGIBLE", reasons: [], addresses: ["203.0.113.9"], safety: ["Addresses for sign-out are not requested."] },
+    approved: true,
     more: [],
     compare: null,
     stale: false,
@@ -110,7 +110,7 @@ function reply(method, url, body) {
   if (p === "/api/v1/targets/" + site)
     return {
       ...state.sites[0],
-      confirmation: { token: findingId, wording: "I have permission.", version: "1", url: state.sites[0].canonicalUrl, expiresAt: "2099-01-01T00:00:00Z" },
+      confirmation: { token: findingId, wording: "I have permission.", version: "1", url: demo, expiresAt: "2099-01-01T00:00:00Z" },
     };
   if (p === "/api/v1/assessments" && method === "POST")
     return { id, targetId: site, targetUrlSnapshot: demo, status: "PENDING" };
@@ -121,9 +121,8 @@ function reply(method, url, body) {
       severities: state.status === "COMPLETED" ? (state.findings ? [{ severity: "LOW", count: state.findings }] : []) : null,
     };
   if (p === "/api/v1/scans/policy")
-    return { configuration: { id: "standard", name: "Standard", details: ["Three threads", "60 alerts per rule"] } };
-  if (p.endsWith("/eligibility")) return { url: state.sites[0]?.canonicalUrl ?? demo, ...state.eligibility };
-  if (p.endsWith("/readiness")) return { ready: !state.ready.length, reasons: state.ready };
+    return { approvedTargets: state.approved ? [demo] : ["http://other.test/"], configuration: { id: "standard", name: "Standard", details: ["Three threads", "60 alerts per rule"] } };
+  if (p === "/api/v1/scans/readiness") return { ready: !state.ready.length, reasons: state.ready };
   if (p === "/api/v1/scans") {
     state.status = "INITIALIZING";
     state.scan = { stage: "SPIDER_RUNNING", spider: { progress: 40, requests: 12, alerts: 3 } };
@@ -141,10 +140,6 @@ function reply(method, url, body) {
   if (p.endsWith("/cancel-tracking")) {
     state.status = "CANCELLED";
     return { status: "CANCELLED", providerScanStopped: false };
-  }
-  if (p.endsWith("/zap-association")) {
-    state.runs.push(run(body.kind));
-    return state.runs.at(-1);
   }
   if (p.endsWith("/zap-sync")) return { status: state.status, runs: state.runs };
   if (p === "/api/v1/findings")
@@ -178,8 +173,6 @@ function reply(method, url, body) {
     state.analysed = true;
     return issues().issues[0];
   }
-  if (p === "/api/v1/integrations/zap/scans")
-    return { provider: { endpoint: "http://127.0.0.1:8090", version: "2.17.0" }, runs: [{ id: "0", state: "FINISHED", progress: 100, reportedOrigin: null }] };
   throw Error("No fixture for " + method + " " + p);
 }
 const browser = await chromium.launch({ executablePath: binary, args: ["--disable-gpu", "--disable-crashpad"] });
@@ -373,48 +366,18 @@ try {
     await page.getByRole("button", { name: "Register website" }).click();
     await page.getByRole("alert").filter({ hasText: "permitted by the local target policy" }).waitFor();
   });
-  await check("receipt form never prefills or fetches a fingerprint", {}, async (page) => {
-    const requested = [];
-    page.on("request", (r) => requested.push(r.url()));
+  await check("no page offers manual run entry or a fingerprint", { state: { status: "ACTIVE_SCAN_RUNNING", runs: [run("spider")] } }, async (page) => {
     await page.goto(web + "/assessments/" + id);
-    await page.getByText("Record an existing operator run").click();
-    await page.getByText("npm.cmd run zap:session").waitFor();
-    const key = page.getByLabel("Session fingerprint");
-    assert.equal(await key.inputValue(), "");
-    await page.getByLabel("Run ID").fill("0");
-    await key.fill(session);
-    await page.getByRole("button", { name: "Save run receipt" }).click(); // Receipt checkbox unchecked.
-    assert.deepEqual(state.posts, []);
-    await page.getByRole("checkbox").check();
-    await page.getByRole("button", { name: "Save run receipt" }).click();
     await page.getByText(/Spider · ID 0 · RUNNING/).waitFor();
-    assert.deepEqual(state.posts, [
-      [
-        "/api/v1/assessments/" + id + "/zap-association",
-        { kind: "spider", scanId: "0", sessionKey: session, confirmedOperatorReceipt: true, target: demo },
-      ],
-    ]);
-    assert.ok(!requested.some((url) => url.includes("session-fingerprint")));
-  });
-  await check("failed receipt shows the reason and reloads the saved record", {}, async (page) => {
-    await page.goto(web + "/assessments/" + id);
-    await page.getByText("Record an existing operator run").click();
-    await page.getByLabel("Run ID").fill("0");
-    await page.getByLabel("Session fingerprint").fill(session);
-    await page.getByRole("checkbox").check();
-    state.fail["/zap-association"] = [409, "ZAP_RUN_ALREADY_BOUND"];
-    state.runs = [run("spider")];
-    await page.getByRole("button", { name: "Save run receipt" }).click();
-    await page.getByRole("alert").filter({ hasText: "already has a different binding" }).waitFor();
-    await page.getByText(/Spider · ID 0 · RUNNING/).waitFor();
-    assert.equal(await page.getByRole("button", { name: "Update saved progress" }).isEnabled(), true);
+    assert.equal(await page.getByRole("textbox").count(), 0);
+    assert.doesNotMatch(await page.locator("main").innerText(), /fingerprint|zap:session|Observe run/i);
   });
   await check("ended runs stay unknown and import refusal is explained", {
     state: { status: "ACTIVE_SCAN_RUNNING", runs: [run("spider", "FINISHED", 100), run("active", "FINISHED", 100)], fail: { "/zap-import": [409, "ZAP_SUCCESS_OR_SCOPE_UNVERIFIED"] } },
   }, async (page) => {
     await page.goto(web + "/assessments/" + id);
     await page.getByText("so its outcome is unknown").waitFor();
-    await page.getByRole("button", { name: "Verify and import results" }).click();
+    await page.getByRole("button", { name: "Check outcome" }).click();
     await page.getByRole("alert").filter({ hasText: "not supplied sufficient successful completion" }).waitFor();
     await page.getByText("Final results are unavailable for this assessment.").waitFor();
   });
@@ -590,44 +553,12 @@ try {
     state.scan.active.progress = 30;
     await page.getByText("30% reported").waitFor({ timeout: 9000 });
   });
-  const none = { addresses: [], safety: [] };
-  for (const [title, eligibility, reason] of [
-    ["Target validation failed.", { ...none, state: "VALIDATION_FAILED", reasons: ["TARGET_ADDRESS_PROHIBITED"] }, "private, local or reserved address"],
-    ["Scan unavailable.", { ...none, state: "UNAVAILABLE", reasons: ["EGRESS_GUARD_UNAVAILABLE"] }, "firewall image is missing"],
-  ])
-    await check("no enabled scan action: " + title, { state: { eligibility } }, async (page) => {
-      for (const section of ["", "/scans"]) {
-        await page.goto(at(section));
-        await page.getByText(title).waitFor();
-        await page.getByText(reason).waitFor();
-        assert.equal(await page.getByRole("button", { name: "Start New Security Scan" }).count(), 0);
-        assert.doesNotMatch(await textOf(page), /juice-shop:3000\/ is approved/);
-        assert.deepEqual(await audit(page), []);
-      }
-      state.eligibility = { ...none, state: "ELIGIBLE", reasons: [], addresses: ["203.0.113.9"] };
-      await page.getByRole("button", { name: "Check again" }).click();
-      await page.getByRole("button", { name: "Start New Security Scan" }).waitFor();
-    });
-  await check("an eligibility answer for another address or a failed check offers no scan", { state: { eligibility: { ...none, url: "https://other.example/", state: "ELIGIBLE", reasons: [], addresses: ["203.0.113.9"] } } }, async (page) => {
-    await page.goto(at(""));
-    await page.getByText("The check could not be completed").waitFor();
-    assert.equal(await page.getByRole("button", { name: "Start New Security Scan" }).count(), 0);
-    state.fail["/eligibility"] = "abort";
-    await page.reload();
-    await page.getByText("Scan unavailable.").waitFor();
-    assert.equal(await page.getByRole("button", { name: "Start New Security Scan" }).count(), 0);
-  });
-  await check("a public website shows its own scope, safety limits and consent", {}, async (page) => {
-    state.sites[0].canonicalUrl = "https://www.hemandu.com/";
-    await page.goto(at(""));
-    await page.getByText("Eligible for scanning.").waitFor();
-    await page.getByText("Authorization required").waitFor();
-    await page.getByRole("button", { name: "Start New Security Scan" }).click();
-    const dialog = page.getByRole("dialog");
-    await dialog.getByText("Addresses for sign-out are not requested.").waitFor();
-    assert.match(await dialog.innerText(), /https:\/\/www\.hemandu\.com\/[\s\S]*Other domains and subdomains are out of scope/);
-    assert.equal(await dialog.getByRole("button", { name: "Start scan" }).isDisabled(), true);
-    assert.deepEqual(state.posts, []);
+  await check("a website outside the approved list cannot be scanned", { state: { approved: false } }, async (page) => {
+    for (const section of ["", "/scans"]) {
+      await page.goto(at(section));
+      await page.getByText("registered for reference only").waitFor();
+      assert.equal(await page.getByRole("button", { name: "Start New Security Scan" }).count(), 0);
+    }
   });
   const earlier = { id: second, targetId: site, website: "Fixture", targetUrlSnapshot: demo, status: "COMPLETED", requestedAt: "2026-11-20T08:00:00.000Z", startedAt: null, finishedAt: "2026-11-20T08:06:00.000Z", outcomeExplanation: null, findingCount: 1 };
   const refs = { earlier: { id: second, finishedAt: earlier.finishedAt, findings: 1 }, later: { id, finishedAt: now, findings: 2 } };
@@ -664,14 +595,33 @@ try {
     await page.getByRole("combobox").selectOption("HIGH");
     await page.getByText("No findings match this view.").waitFor();
   });
-  await check("assessment summary explains results without a score", { state: { status: "COMPLETED", findings: 2, guide: true } }, async (page) => {
-    await page.goto(web + "/assessments/" + id);
+  await check("the analysis summary explains results without a score, on one page only", { state: { status: "COMPLETED", findings: 2, guide: true } }, async (page) => {
+    await page.goto(at("/analysis"));
     await page.getByText("1 issue needs attention.").waitFor();
     const text = (await page.locator(".assessment-summary").innerText()).replace(/\s+/g, " ");
     assert.match(text, /does not show that the website is secure/);
     assert.match(text, /40026/);
     assert.match(text, /not full OWASP coverage/);
     assert.doesNotMatch(text, /score|grade|\d+\s*%/i);
+    await page.goto(web + "/assessments/" + id);
+    await page.getByText("Low 2").waitFor();
+    assert.equal(await page.getByText("1 issue needs attention.").count(), 0);
+  });
+  await check("the dashboard shows real counts, the latest assessment and no score", { state: { status: "COMPLETED", findings: 2 } }, async (page) => {
+    await page.goto(web + "/");
+    await page.getByText("2 recorded findings from completed assessments").waitFor();
+    const metrics = (await page.locator(".metrics").innerText()).replace(/\s+/g, " ");
+    assert.match(metrics, /Registered websites 1 .*Completed assessments 1 Of 1 assessments created.*Latest assessment Completed/);
+    assert.doesNotMatch(await page.locator("main").innerText(), /score|grade|risk level|protect|uptime|\d+\s*%/i);
+    assert.equal(await page.getByText("How it works").count(), 0);
+    await page.locator(".metrics").getByRole("link").click();
+    await page.waitForURL("**/assessments/" + id);
+  });
+  await check("an empty workspace explains the workflow", {}, async (page) => {
+    await page.goto(web + "/");
+    await page.getByRole("heading", { name: "How it works" }).waitFor();
+    assert.equal(await page.locator(".next-steps li").count(), 4);
+    assert.deepEqual(await audit(page), []);
   });
   await check("report with AI marks its text", { state: { status: "COMPLETED", findings: 1, analysed: true } }, async (page) => {
     await page.goto(web + "/assessments/" + id + "/report");
@@ -766,11 +716,9 @@ try {
     assert.match(prompts[0], /does not stop any ZAP scan/);
     assert.equal(await cancel.count(), 0);
   });
-  await check("other websites can cancel tracking but cannot associate runs", { state: { url: "https://example.org/" } }, async (page) => {
+  await check("other websites can cancel tracking", { state: { url: "https://example.org/" } }, async (page) => {
     await page.goto(web + "/assessments/" + id);
     await page.getByRole("button", { name: "Cancel local tracking" }).waitFor();
-    assert.equal(await page.getByText("Record an existing operator run").count(), 0);
-    assert.equal(await page.getByRole("button", { name: /Observe run/ }).count(), 0);
   });
   await check("keyboard reaches the skip link first and focus is visible", {}, async (page) => {
     await page.goto(web + "/");

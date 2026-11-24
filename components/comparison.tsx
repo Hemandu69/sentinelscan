@@ -1,32 +1,23 @@
 "use client";
-import { useEffect, useState } from "react";
-import { z } from "zod";
-import { describeError, request } from "../lib/api";
+import { useState } from "react";
+import { dateTime as date } from "../lib/format";
 import { comparison, comparisonReason } from "../lib/scans";
 import { SeverityBadge } from "./issues";
+import { useRead } from "./use-read";
+
+const parse = (body: unknown) => comparison.parse(body);
 
 type Row = { id: string; finishedAt: string | null };
-const date = (value: string) => new Date(value).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 
 export function AssessmentComparison({ completed }: { completed: Row[] }) {
   const [choice, choose] = useState<{ later: string; earlier: string }>();
   const later = choice?.later ?? completed[0]?.id,
     earlier = choice?.earlier ?? completed[1]?.id;
   const key = earlier && later && earlier !== later ? later + "#" + earlier : "";
-  const [result, setResult] = useState<{ key: string; data?: z.infer<typeof comparison>; error?: string }>();
-  useEffect(() => {
-    if (!key) return;
-    const control = new AbortController();
-    request(`/api/v1/assessments/${later}/comparison?earlier=${earlier}`, control.signal)
-      .then((body) => comparison.parse(body))
-      .then((data) => {
-        if (!control.signal.aborted) setResult({ key, data });
-      })
-      .catch((cause: unknown) => {
-        if (!control.signal.aborted) setResult({ key, error: describeError(cause) });
-      });
-    return () => control.abort();
-  }, [key, later, earlier]);
+  const { data, error } = useRead(
+    key ? `/api/v1/assessments/${later}/comparison?earlier=${earlier}` : null,
+    parse,
+  );
   if (completed.length < 2)
     return <p>A comparison needs two completed assessments of this website. There {completed.length === 1 ? "is one" : "are none"} so far.</p>;
   const select = (label: string, value: string, set: (id: string) => void) => (
@@ -41,7 +32,6 @@ export function AssessmentComparison({ completed }: { completed: Row[] }) {
       </select>
     </label>
   );
-  const data = result?.key === key ? result.data : undefined;
   return (
     <>
       <div className="ledger-filters">
@@ -50,8 +40,8 @@ export function AssessmentComparison({ completed }: { completed: Row[] }) {
       </div>
       {!key ? (
         <p>Choose two different assessments.</p>
-      ) : result?.key === key && result.error ? (
-        <p role="alert">{result.error}</p>
+      ) : error ? (
+        <p role="alert">{error}</p>
       ) : !data ? (
         <p role="status">Comparing…</p>
       ) : !data.result ? (

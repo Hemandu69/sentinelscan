@@ -1,7 +1,10 @@
 "use client";
 import { useEffect, useState } from "react";
+import type { z } from "zod";
 import { readSites, request, serviceReady, type Site } from "../lib/api";
+import { assessments } from "../lib/records";
 import { readDashboard, type Dashboard } from "../lib/dashboard";
+type Latest = z.infer<typeof assessments>["items"][number];
 export type Reading<T> =
   { state: "loading" } | { state: "error" } | { state: "ready"; value: T };
 export const services = [
@@ -14,6 +17,7 @@ export function useOverview(revision: number) {
   const [dashboard, setDashboard] = useState<Reading<Dashboard>>({
     state: "loading",
   });
+  const [latest, setLatest] = useState<Reading<Latest | null>>({ state: "loading" });
   const [health, setHealth] = useState<Record<string, Reading<boolean>>>({});
   useEffect(() => {
     const ctrl = new AbortController();
@@ -22,6 +26,15 @@ export function useOverview(revision: number) {
       setSites({ state: "loading" });
       setHealth({});
       setDashboard({ state: "loading" });
+      setLatest({ state: "loading" });
+      void request("/api/v1/assessments?offset=0", ctrl.signal)
+        .then((body) => assessments.parse(body).items[0] ?? null)
+        .then((value) => {
+          if (!ctrl.signal.aborted) setLatest({ state: "ready", value });
+        })
+        .catch(() => {
+          if (!ctrl.signal.aborted) setLatest({ state: "error" });
+        });
       void request("/api/v1/dashboard", ctrl.signal)
         .then(readDashboard)
         .then((value) => {
@@ -57,5 +70,5 @@ export function useOverview(revision: number) {
     void load();
     return () => ctrl.abort();
   }, [revision]);
-  return { sites, health, dashboard };
+  return { sites, health, dashboard, latest };
 }

@@ -13,11 +13,9 @@ const live = () => new AbortController().signal;
 test("provider operations wait longer than their server-side reads", () => {
   // Two session checks (Docker, version, location) plus one inventory and progress read.
   const verification = 2 * 3 * 5000 + 2 * 5000;
-  assert.ok(timeoutFor(base + "/zap-association") > verification);
   assert.ok(timeoutFor(base + "/zap-sync") > verification);
   // Import verifies twice, sequentially for both runs, around a 60 second result read.
   assert.ok(timeoutFor(base + "/zap-import") > 2 * (verification + 10000) + 60000);
-  assert.ok(timeoutFor(base + "/zap-observations/active/0") > 15000);
   assert.equal(timeoutFor(base + "/execution"), 8000);
   assert.equal(timeoutFor(base + "/cancel-tracking"), 8000);
   assert.equal(timeoutFor("/health"), 8000);

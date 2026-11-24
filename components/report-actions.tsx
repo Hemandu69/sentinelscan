@@ -2,11 +2,10 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { describeError, request, requestPdf } from "../lib/api";
+import { dateTime as date } from "../lib/format";
 import { reportsFor, unavailableReason, type ReportState } from "../lib/reports";
 import "./report-actions.css";
 
-const date = (value: string) =>
-  new Date(value).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 type Action = "generate" | "download" | "preview";
 
 export function ReportActions({

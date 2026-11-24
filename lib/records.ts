@@ -21,7 +21,6 @@ export const runEvidence = z.object({
   contract: z.string(),
   collectedAt: when,
   digest: z.string().regex(/^[a-f0-9]{64}$/),
-  exclusions: z.array(z.string()).default([]),
   spider: z.object({ scanId: z.string(), startedAt: when, endedAt: when, results: count }),
   active: z.object({
     scanId: z.string(),
@@ -113,18 +112,6 @@ export const findings = z.object({
   items: z.array(finding),
   hasMore: z.boolean(),
 });
-export const scans = z.object({
-  provider: z.object({ endpoint: z.string(), version: z.string() }),
-  runs: z.array(
-    z.object({
-      id: z.string().nullable(),
-      state: z.string().nullable(),
-      progress: z.number().nullable(),
-      reportedOrigin: z.string().nullable(),
-    }),
-  ),
-});
-
 export const execution = z.object({
   status: z.string(),
   runs: z.array(

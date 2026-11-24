@@ -1,29 +1,17 @@
 "use client";
 import Link from "next/link";
-import { useEffect, useState } from "react";
-import { describeError, readSites, request, type Site } from "../lib/api";
+import { useState } from "react";
+import { readSites } from "../lib/api";
 import { Icon } from "./icons";
 import { Navigation } from "./navigation";
 import { SiteDialog } from "./site-dialog";
+import { useRead } from "./use-read";
 import "./workspace.css";
 
 export function WebsitesPage() {
-  const [revision, reload] = useState(0),
-    [open, setOpen] = useState(false),
+  const [open, setOpen] = useState(false),
     [notice, setNotice] = useState("");
-  const [result, setResult] = useState<{ sites?: Site[]; error?: string }>();
-  useEffect(() => {
-    const control = new AbortController();
-    request("/api/v1/targets", control.signal)
-      .then(readSites)
-      .then((sites) => {
-        if (!control.signal.aborted) setResult({ sites });
-      })
-      .catch((cause: unknown) => {
-        if (!control.signal.aborted) setResult((old) => ({ sites: old?.sites, error: describeError(cause) }));
-      });
-    return () => control.abort();
-  }, [revision]);
+  const { data: sites, error, reload } = useRead("/api/v1/targets", readSites);
   return (
     <>
       <Navigation section="websites" />
@@ -31,26 +19,26 @@ export function WebsitesPage() {
         <header className="workspace-head">
           <div>
             <h1>Websites</h1>
-            <p>Open a website to scan it, read its AI Analysis and get its reports.</p>
+            <p>Open a website to see its scans, AI Analysis and reports. Scans are limited to the Juice Shop demo.</p>
           </div>
           <button className="primary" onClick={() => setOpen(true)}>
             <Icon name="plus" size={16} /> Add website
           </button>
         </header>
         {notice && <p role="status" className="notice">{notice}</p>}
-        {result?.error && (
+        {error && (
           <p role="alert">
-            The websites could not be loaded. {result.error}{" "}
-            <button className="refresh" onClick={() => reload((n) => n + 1)}>
+            The websites could not be loaded. {error}{" "}
+            <button className="refresh" onClick={reload}>
               Retry
             </button>
           </p>
         )}
-        {!result && <p role="status">Loading websites…</p>}
-        {result?.sites?.length === 0 && <p>No websites yet. Add the first one to begin.</p>}
-        {result?.sites && result.sites.length > 0 && (
+        {!sites && !error && <p role="status">Loading websites…</p>}
+        {sites?.length === 0 && <p>No websites yet. Add the first one to begin.</p>}
+        {sites && sites.length > 0 && (
           <ul className="sites">
-            {result.sites.map((site) => (
+            {sites.map((site) => (
               <li key={site.id}>
                 <span>
                   <strong>{site.displayName}</strong>
@@ -70,7 +58,7 @@ export function WebsitesPage() {
           onSaved={() => {
             setOpen(false);
             setNotice("Website registered. Open it to start a security scan.");
-            reload((n) => n + 1);
+            reload();
           }}
         />
       )}

@@ -1,6 +1,8 @@
 "use client";
 import Link from "next/link";
 import { useState } from "react";
+import { dateTime } from "../lib/format";
+import { statusLabel } from "../lib/records";
 import { Icon } from "./icons";
 import { SiteDialog } from "./site-dialog";
 import { services, useOverview } from "./use-overview";
@@ -33,9 +35,8 @@ function Metric({
 export function Overview() {
   const [revision, reload] = useState(0),
     [open, setOpen] = useState(false),
-    [showAll, setShowAll] = useState(false),
     [notice, setNotice] = useState("");
-  const { sites, health, dashboard } = useOverview(revision);
+  const { sites, health, dashboard, latest } = useOverview(revision);
   const summary = dashboard.state === "ready" ? dashboard.value : null;
   const waiting =
     dashboard.state === "loading"
@@ -103,12 +104,37 @@ export function Overview() {
               summary ? `Of ${summary.totalChecks} assessments created` : waiting
             }
           />
-          <Metric
-            label="Recorded findings"
-            value={results ? String(results.findingCount) : "—"}
-            note={resultNote}
-          />
+          <div className="metric">
+            <h2>Latest assessment</h2>
+            <strong className="metric-text">
+              {latest.state === "ready" && latest.value ? statusLabel(latest.value.status) : "—"}
+            </strong>
+            <small>
+              {latest.state === "loading" ? (
+                "Reading assessments."
+              ) : latest.state === "error" ? (
+                "Assessments unavailable."
+              ) : latest.value ? (
+                <Link href={"/assessments/" + latest.value.id}>
+                  {latest.value.website}, {dateTime(latest.value.requestedAt)}
+                </Link>
+              ) : (
+                "None yet."
+              )}
+            </small>
+          </div>
         </section>
+        {summary?.completedChecks === 0 && (
+          <section className="next-steps" aria-labelledby="steps-title">
+            <h2 id="steps-title">How it works</h2>
+            <ol>
+              <li>Register the Juice Shop demo: http://juice-shop:3000/</li>
+              <li>Open it and start a security scan. You confirm permission first.</li>
+              <li>Read the findings in plain language under AI Analysis.</li>
+              <li>Download the PDF report.</li>
+            </ol>
+          </section>
+        )}
         <div className="columns">
           <section id="issues">
             <div className="section-head">
@@ -117,7 +143,7 @@ export function Overview() {
             </div>
             <p className="lead">
               {results
-                ? "What each severity means, with findings from completed assessments. A finding recorded in two assessments counts twice."
+                ? `${results.findingCount} recorded ${results.findingCount === 1 ? "finding" : "findings"} from completed assessments, by severity. A finding in two assessments counts twice.`
                 : resultNote}
             </p>
             <dl className="severity">
@@ -174,18 +200,18 @@ export function Overview() {
           <div className="section-head">
             <Icon name="web" />
             <h2>
-              {showAll ? "Registered websites" : "Recently registered websites"}
+              Recently registered websites
             </h2>
           </div>
           <p className="lead">The latest additions to your website register.</p>
           {sites.state === "ready" && sites.value.length > 5 && (
-            <button className="refresh" onClick={() => setShowAll(!showAll)}>
-              {showAll ? "Show recent websites" : "Show all websites"}
-            </button>
+            <Link className="detail-link" href="/websites">
+              All {sites.value.length} websites
+            </Link>
           )}
           {sites.state === "ready" && sites.value.length > 0 ? (
             <ul className="sites">
-              {(showAll ? sites.value : sites.value.slice(0, 5)).map((s) => (
+              {sites.value.slice(0, 5).map((s) => (
                 <li key={s.id}>
                   <span>
                     <strong>{s.displayName}</strong>
@@ -193,11 +219,7 @@ export function Overview() {
                   </span>
                   <div className="site-actions">
                     <time dateTime={s.createdAt}>
-                      {new Intl.DateTimeFormat("en", {
-                        year: "numeric",
-                        month: "short",
-                        day: "numeric",
-                      }).format(new Date(s.createdAt))}
+                      {dateTime(s.createdAt)}
                     </time>
                     <Link
                       className="detail-link"

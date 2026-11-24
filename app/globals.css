@@ -646,10 +646,6 @@ dialog form button {
 .mast a:hover {
   text-decoration: underline;
 }
-.detail-hero h1 {
-  overflow-wrap: anywhere;
-  font-size: clamp(36px, 4.5vw, 70px);
-}
 .record {
   display: grid;
   grid-template-columns: 1.2fr 1fr;
@@ -715,9 +711,6 @@ dialog form button {
   .sites li {
     align-items: flex-start;
   }
-  .detail-hero {
-    min-height: 200px;
-  }
 }
 .ledger-entry {border-bottom:1px solid var(--line); padding:1rem 0; overflow-wrap:anywhere}
 .ledger-entry summary {cursor:pointer}
@@ -750,4 +743,23 @@ progress:focus-visible,
   font-weight: 600;
   color: var(--copper);
   text-decoration: underline;
+}
+.metric .metric-text {
+  font-size: clamp(20px, 1.9vw, 28px);
+  line-height: 1.5;
+}
+.metric small a {
+  color: var(--copper);
+  text-decoration: underline;
+}
+.next-steps {
+  padding: 22px 0;
+}
+.next-steps ol {
+  list-style: decimal;
+  padding-left: 1.3rem;
+  margin-top: 8px;
+}
+.next-steps li {
+  padding: 3px 0;
 }

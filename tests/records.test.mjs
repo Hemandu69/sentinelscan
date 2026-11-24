@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { assessment, findings, scans } from "../lib/records.ts";
+import { assessment, findings } from "../lib/records.ts";
 import { detailFor } from "../lib/records.ts";
 test("detail matches the requested record and only displays reconciled final counts", () => {
   const id = "b113e0b9-c57f-43a4-86a7-51fe94507c96";
@@ -61,13 +61,6 @@ test("run evidence is optional, strict and labels unknown outcomes", async () =>
   assert.equal(statusLabel("COMPLETED"), "Completed");
   assert.match(statusLabel("ACTIVE_SCAN_RUNNING"), /^Last recorded/);
   assert.equal(statusLabel("SOMETHING_NEW"), "SOMETHING_NEW");
-});
-test("provider listings preserve unknown scope, state and progress", () => {
-  const input = {
-    provider: { endpoint: "http://127.0.0.1:8090", version: "2.17.0" },
-    runs: [{ id: "0", state: null, progress: null, reportedOrigin: null }],
-  };
-  assert.deepEqual(scans.parse(input), input);
 });
 test("records distinguish unreported findings from an empty result page", () => {
   assert.equal(assessment.shape.findingCount.parse(null), null);
