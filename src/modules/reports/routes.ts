@@ -6,7 +6,7 @@ import { inspectPdf, type Render } from "./render.ts";
 import type { ReportStorage } from "./storage.ts";
 
 // Raised whenever the report's content or layout changes, so older files show as outdated.
-export const templateVersion = "3";
+export const templateVersion = "4";
 export const filename = (assessmentId: string) => `sentinelscan-report-${assessmentId}.pdf`;
 const params = z.strictObject({ id: z.uuid() });
 const query = z.strictObject({ view: z.enum(["download", "preview"]).default("download") });

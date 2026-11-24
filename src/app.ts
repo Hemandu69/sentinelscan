@@ -8,6 +8,13 @@ import {
   defaultReportDirectory,
   reportStorage,
 } from "./modules/reports/storage.ts";
+import { providerSession } from "./integrations/zap/session.ts";
+import { readContainerLog } from "./integrations/zap/run-log.ts";
+import { createRunRecords } from "./modules/assessments/run-records.ts";
+import { registerComparison } from "./modules/assessments/comparison.ts";
+import { createOrchestrator } from "./modules/scans/orchestrator.ts";
+import { dockerResources } from "./modules/scans/resources.ts";
+import { registerScans } from "./modules/scans/routes.ts";
 import { registerDashboard } from "./modules/dashboard/routes.ts";
 import Fastify from "fastify";
 import { PrismaClient, Prisma } from "@prisma/client";
@@ -100,7 +107,19 @@ export function buildApp(
     reportStorage(defaultReportDirectory()),
     browserRenderer(settings.WEB_ORIGIN),
   );
-  registerRunRecords(app, db, zap);
+  const getSession = () => providerSession(zap);
+  const runs = createRunRecords(db, zap, getSession, readContainerLog);
+  const scans = createOrchestrator({
+    db,
+    zap,
+    records: runs,
+    getSession,
+    readLog: readContainerLog,
+    resources: dockerResources,
+  });
+  registerRunRecords(app, db, zap, getSession, readContainerLog, runs, scans.isActive);
+  registerScans(app, db, consent, scans, resolve);
+  registerComparison(app, db);
   registerObservation(app, db, zap);
   return app;
 }

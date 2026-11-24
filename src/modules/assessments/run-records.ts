@@ -96,36 +96,26 @@ function trackingStatus(kind: Kind, state: string | null, current: string) {
 function isClosed(status: string) {
   return ["FAILED", "CANCELLED", "COMPLETED"].includes(status);
 }
-export function registerRunRecords(
-  app: FastifyInstance,
+const publicRun = (row: Run) => ({
+  kind: row.kind,
+  scan_id: row.scan_id,
+  state: row.state,
+  progress: row.progress,
+  associated_at: row.associated_at,
+  observed_at: row.observed_at,
+});
+export type RunRecords = ReturnType<typeof createRunRecords>;
+// The verified operations, shared by the operator routes and the scan orchestrator.
+export function createRunRecords(
   db: PrismaClient,
   zap: ZapClient,
   getSession = () => providerSession(zap),
   readLog = readContainerLog,
 ) {
-  const base = "/api/v1/assessments/:id";
-  app.get(base + "/execution", async (req) => {
-    const { id } = params.parse(req.params);
-    return db.$transaction(
-      async (tx) => {
-        const assessment = await tx.assessment.findUnique({
-          where: { id },
-          select: { status: true },
-        });
-        if (!assessment) throw new ApiError(404, "ASSESSMENT_NOT_FOUND");
-        return { ...assessment, runs: await runs(tx, id) };
-      },
-      { isolationLevel: "RepeatableRead" },
-    );
-  });
-  app.get("/api/v1/integrations/zap/session-fingerprint", async (_req, reply) =>
-    reply
-      .header("Cache-Control", "no-store")
-      .send({ sessionKey: await getSession() }),
-  );
-  app.post(base + "/zap-association", async (req) => {
-    const { id } = params.parse(req.params),
-      input = binding.parse(req.body);
+  async function associate(
+    id: string,
+    input: Pick<z.infer<typeof binding>, "kind" | "scanId" | "sessionKey">,
+  ): Promise<Run> {
     const { status: initial, existing } = await db.$transaction(
       async (tx) => ({
         status: await eligible(tx, id),
@@ -175,11 +165,10 @@ export function registerRunRecords(
           ? sample.outcome
           : null;
       await tx.$executeRaw`UPDATE assessments SET status=${terminal ?? trackingStatus(input.kind, sample.state, status)},started_at=CASE WHEN ${sample.outcome === "RUNNING"} THEN COALESCE(started_at,CURRENT_TIMESTAMP) ELSE started_at END,finished_at=CASE WHEN ${!!terminal} THEN CURRENT_TIMESTAMP ELSE finished_at END,error_code=CASE WHEN ${!!terminal} THEN ${terminal ? "ZAP_RUN_" + terminal : null}::text ELSE error_code END WHERE id=${id}::uuid`;
-      return (await runs(tx, id)).find((r) => r.kind === input.kind);
+      return (await runs(tx, id)).find((r) => r.kind === input.kind)!;
     });
-  });
-  app.post(base + "/zap-sync", async (req) => {
-    const { id } = params.parse(req.params);
+  }
+  async function sync(id: string) {
     const snapshot = await db.$transaction(async (tx) => ({
       status: await eligible(tx, id),
       runs: await runs(tx, id),
@@ -239,10 +228,8 @@ export function registerRunRecords(
       }
       return { status, runs: await runs(tx, id) };
     });
-  });
-  app.post(base + "/cancel-tracking", async (req) => {
-    const { id } = params.parse(req.params);
-    z.strictObject({ confirmed: z.literal(true) }).parse(req.body);
+  }
+  async function cancelTracking(id: string) {
     return db.$transaction(async (tx) => {
       const status = await lockedStatus(tx, id);
       // The provider run has its own lifecycle and is never contacted here.
@@ -259,10 +246,9 @@ export function registerRunRecords(
       });
       return result;
     });
-  });
+  }
   const importing = new Set<string>();
-  app.post(base + "/zap-import", async (req) => {
-    const { id } = params.parse(req.params);
+  async function importRun(id: string) {
     const snapshot = await db.$transaction(async (tx) => ({
       status: await eligible(tx, id),
       runs: await runs(tx, id),
@@ -386,5 +372,57 @@ export function registerRunRecords(
     } finally {
       importing.delete(id);
     }
+  }
+  async function execution(id: string) {
+    return db.$transaction(
+      async (tx) => {
+        const assessment = await tx.assessment.findUnique({
+          where: { id },
+          select: { status: true },
+        });
+        if (!assessment) throw new ApiError(404, "ASSESSMENT_NOT_FOUND");
+        return { ...assessment, runs: await runs(tx, id) };
+      },
+      { isolationLevel: "RepeatableRead" },
+    );
+  }
+  return { associate, sync, cancelTracking, importRun, execution };
+}
+
+// Session fingerprints stay on the server. Operators read them with the zap:session command.
+export function registerRunRecords(
+  app: FastifyInstance,
+  db: PrismaClient,
+  zap: ZapClient,
+  getSession = () => providerSession(zap),
+  readLog = readContainerLog,
+  records = createRunRecords(db, zap, getSession, readLog),
+  // An orchestrated scan owns its records until it ends.
+  inProgress: (id: string) => boolean = () => false,
+) {
+  const base = "/api/v1/assessments/:id";
+  const own = (value: unknown) => {
+    const { id } = params.parse(value);
+    if (inProgress(id)) throw new ApiError(409, "SCAN_IN_PROGRESS");
+    return id;
+  };
+  app.get(base + "/execution", async (req) => {
+    const result = await records.execution(params.parse(req.params).id);
+    return { ...result, runs: result.runs.map(publicRun) };
   });
+  app.post(base + "/zap-association", async (req) => {
+    const id = own(req.params);
+    return publicRun(await records.associate(id, binding.parse(req.body)));
+  });
+  app.post(base + "/zap-sync", async (req) => {
+    const result = await records.sync(own(req.params));
+    return { ...result, runs: result.runs.map(publicRun) };
+  });
+  app.post(base + "/cancel-tracking", async (req) => {
+    const id = own(req.params);
+    z.strictObject({ confirmed: z.literal(true) }).parse(req.body);
+    return records.cancelTracking(id);
+  });
+  app.post(base + "/zap-import", async (req) => records.importRun(own(req.params)));
+  return records;
 }

@@ -30,9 +30,11 @@ const select = {
   cweId: true,
   wascId: true,
   firstObservedAt: true,
-  assessment: { select: { target: { select: { displayName: true } } } },
+  assessment: { select: { targetId: true, target: { select: { displayName: true } } } },
 } as const;
-type Row = FindingRow & { assessment: { target: { displayName: string } } };
+type Row = FindingRow & {
+  assessment: { targetId: string; target: { displayName: string } };
+};
 type Stored = {
   finding_id: string;
   status: string;
@@ -94,9 +96,12 @@ export function registerIssues(app: FastifyInstance, db: PrismaClient, ai: AiCon
     });
     const done = current.filter((item) => item !== null);
     const failed = rows.find((row) => row?.status === "FAILED" && row.input_digest === digest);
+    // Finished earlier, for input that has changed since. Its text is not shown.
+    const stale = rows.some((row) => row?.status === "COMPLETED" && row.input_digest !== digest);
     return {
       key: group.key,
       assessmentId: first.assessmentId,
+      targetId: first.assessment.targetId,
       website: first.assessment.target.displayName,
       scanner: {
         title: first.name,
@@ -121,7 +126,7 @@ export function registerIssues(app: FastifyInstance, db: PrismaClient, ai: AiCon
       })),
       endpoints: [...new Set(group.findings.map((row) => bare(row.url)))],
       analysis: {
-        status: done.length === rows.length ? "COMPLETED" : done.length ? "PARTIAL" : failed ? "FAILED" : "NONE",
+        status: done.length === rows.length ? "COMPLETED" : done.length ? "PARTIAL" : stale ? "STALE" : failed ? "FAILED" : "NONE",
         errorCode: done.length ? null : (failed?.error_code ?? null),
         provider: done[0]?.row.provider ?? null,
         model: done[0]?.row.model ?? null,

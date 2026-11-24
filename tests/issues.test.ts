@@ -28,7 +28,7 @@ const finding = (change: object = {}) => ({
   cweId: null,
   wascId: null,
   firstObservedAt: new Date("2026-11-24T06:48:31.303Z"),
-  assessment: { target: { displayName: "Local Juice Shop" } },
+  assessment: { targetId: "ed603ae8-933f-4bdc-af5e-5c09d72fa998", target: { displayName: "Local Juice Shop" } },
   ...change,
 });
 const pair = () => [finding({ url: "http://juice-shop:3000/assets/public" }), finding()];
@@ -217,6 +217,8 @@ test("partial, stale and corrupt stored results are never shown as complete", as
     f.saved.set(f.rows[1].id, row(f.rows[1].id, { input_digest: "0".repeat(64) }));
     expect(await status()).toBe("PARTIAL");
     f.saved.set(f.rows[0].id, row(f.rows[0].id, { result: { ...analysis, severity: "HIGH" } }));
+    expect(await status()).toBe("STALE");
+    f.saved.clear();
     expect(await status()).toBe("NONE");
   } finally {
     await f.app.close();

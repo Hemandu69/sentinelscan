@@ -30,15 +30,34 @@ function assessment({ target, _count, errorCode, ...row }: AssessmentRow) {
       "ZAP reported that the linked run was stopped or cancelled.",
     OPERATOR_CANCELLED_TRACKING:
       "The operator cancelled tracking in SentinelScan. This did not stop any ZAP scan.",
+    OPERATOR_CANCELLED_SCAN:
+      "The operator stopped the scan, and ZAP confirmed it. No results were imported.",
+    CANCELLATION_UNCONFIRMED:
+      "A stop was requested, but ZAP did not confirm that the scan stopped. Its outcome is unknown.",
+    SCAN_START_FAILED: "The scan could not be started. Nothing was tested.",
+    SCAN_STOPPED_MEMORY:
+      "The scan was stopped because ZAP used more than 90% of its memory limit.",
+    SCAN_STOPPED_SCOPE:
+      "The scan was stopped because ZAP reported a site outside the authorized website.",
+    SCAN_STOPPED_SERVICE:
+      "The scan was stopped because a required service became unhealthy.",
+    SCAN_STOPPED_ERRORS: "The scan was stopped because ZAP reported errors.",
+    SCAN_STOPPED_TIME: "The scan was stopped because it exceeded its time limit.",
+    PROVIDER_LOST:
+      "Contact with ZAP was lost during the scan. Its outcome is unknown.",
+    SPIDER_UNVERIFIED:
+      "Page discovery did not end in a verified way, so testing was not started.",
+    EVIDENCE_UNVERIFIED:
+      "The scans ended, but the evidence did not pass verification. No results were imported.",
   };
   return {
     ...row,
     website: target.displayName,
     outcomeExplanation:
-      row.status === "OUTCOME_UNKNOWN"
-        ? "The scans ended, but evidence of how they ended has not been verified. No results were imported."
-        : Object.hasOwn(explanations, errorCode ?? "")
-          ? explanations[errorCode!]
+      Object.hasOwn(explanations, errorCode ?? "")
+        ? explanations[errorCode!]
+        : row.status === "OUTCOME_UNKNOWN"
+          ? "The scans ended, but evidence of how they ended has not been verified. No results were imported."
           : null,
     findingCount: row.status === "COMPLETED" ? _count.findings : null,
   };
@@ -60,7 +79,6 @@ export function summarizeEvidence(
     contract: facts.contract,
     collectedAt: active.collectedAt,
     digest: active.factsDigest,
-    sessionKey: facts.sessionKey,
     spider: {
       scanId: spider.run.scanId,
       startedAt: facts.log.spider!.startedAt,

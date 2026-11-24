@@ -205,7 +205,68 @@ export function createZapClient(
       mismatches,
     };
   }
+  const started = async (path: string, params: Record<string, string>) =>
+    (
+      await view(
+        path,
+        z.object({
+          scan: z
+            .union([z.string(), z.number().int()])
+            .transform(String)
+            .pipe(z.string().regex(/^\d{1,12}$/)),
+        }),
+        params,
+      )
+    ).scan;
+  const demoTarget = "http://juice-shop:3000/";
+  const number = z
+    .union([z.string(), z.number()])
+    .transform(Number)
+    .pipe(z.number().int().nonnegative());
   return {
+    // The only state-changing provider operations. Targets and options are fixed here.
+    async newSession(name: string) {
+      z.string().regex(/^sentinelscan-[a-z0-9-]{1,60}$/).parse(name);
+      await view("core/action/newSession", z.object({ Result: z.literal("OK") }), {
+        name,
+        overwrite: "false",
+      });
+    },
+    startSpider: () =>
+      started("spider/action/scan", { url: demoTarget, recurse: "true" }),
+    startActive: () =>
+      started("ascan/action/scan", { url: demoTarget, recurse: "true" }),
+    async stopScan(kind: "spider" | "active", scanId: string) {
+      z.string().regex(/^\d{1,12}$/).parse(scanId);
+      await view(
+        (kind === "spider" ? "spider" : "ascan") + "/action/stop",
+        z.object({ Result: z.literal("OK") }),
+        { scanId },
+      );
+    },
+    async sites() {
+      return (await view("core/view/sites", z.object({ sites: z.array(z.string()).max(256) }))).sites;
+    },
+    // Reads the settings that the approved scan configuration depends on.
+    async policy() {
+      const option = async (path: string, key: string) =>
+        (await view(path, z.object({ [key]: number })))[key];
+      const { scanners } = await view(
+        "ascan/view/scanners",
+        z.object({ scanners: z.array(z.object({ id: z.string(), enabled: z.string() })).max(1024) }),
+      );
+      return {
+        delayMs: await option("ascan/view/optionDelayInMs", "DelayInMs"),
+        threadsPerHost: await option("ascan/view/optionThreadPerHost", "ThreadPerHost"),
+        hostsPerScan: await option("ascan/view/optionHostPerScan", "HostPerScan"),
+        maxScanMinutes: await option("ascan/view/optionMaxScanDurationInMins", "MaxScanDurationInMins"),
+        maxRuleMinutes: await option("ascan/view/optionMaxRuleDurationInMins", "MaxRuleDurationInMins"),
+        passiveAlertLimit: await option("pscan/view/maxAlertsPerRule", "maxAlertsPerRule"),
+        rules: scanners.length,
+        enabledRules: scanners.filter((rule) => rule.enabled === "true").length,
+        domXss: scanners.some((rule) => rule.id === "40026"),
+      };
+    },
     readActiveMessages,
     // Compares in memory so that no caller needs the key itself.
     mentionsCredential(text: string) {
