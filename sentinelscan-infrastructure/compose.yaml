@@ -1,0 +1,73 @@
+name: sentinelscan-infrastructure
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: sentinelscan
+      POSTGRES_USER: sentinel
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks: [local]
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "sentinel", "-d", "sentinelscan"]
+      interval: 5s
+      timeout: 4s
+      retries: 12
+  zap:
+    image: docker.io/zaproxy/zap-stable:2.17.0
+    mem_limit: 3072m
+    environment:
+      ZAP_API_KEY: ${ZAP_API_KEY:?Set ZAP_API_KEY in .env}
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - >-
+        umask 077;
+        printf 'api.key=%s\n' "$${ZAP_API_KEY}" > /dev/shm/zap-key.properties;
+        printf 'X-ZAP-API-Key: %s\n' "$${ZAP_API_KEY}" > /dev/shm/zap-key.header;
+        unset ZAP_API_KEY;
+        exec /zap/zap.sh -daemon -host 0.0.0.0 -port 8090 -Xmx1536m
+        -addonuninstall domxss
+        -configfile /dev/shm/zap-key.properties
+        -config scanner.threadPerHost=2
+        -config scanner.hostPerScan=1
+        -config scanner.delayInMs=20
+        -config pscans.maxAlertsPerRule=10
+        -config api.disablekey=false
+        -config api.noKeyForSafeOps=false
+        -config api.reportPermErrors=true
+        -config 'api.addrs.addr.name=^(127[.]0[.]0[.]1|localhost|172[.]29[.]83[.]1)$$'
+        -config api.addrs.addr.regex=true
+    ports:
+      - "127.0.0.1:8090:8090"
+    volumes:
+      # Keeps the API key out of the container log. See zap-log4j2.properties.
+      - type: bind
+        source: ./zap-log4j2.properties
+        target: /home/zap/.ZAP/log4j2.properties
+        read_only: true
+        bind:
+          create_host_path: false
+    networks: [local]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS --max-time 4 -H @/dev/shm/zap-key.header http://127.0.0.1:8090/JSON/core/view/version/ | grep -q '\"version\"'"]
+      interval: 10s
+      timeout: 6s
+      start_period: 60s
+      retries: 12
+  juice-shop:
+    image: bkimminich/juice-shop:latest
+    networks: [local]
+    ports:
+      - "127.0.0.1:3001:3000"
+volumes:
+  pgdata:
+networks:
+  local:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.29.83.0/28
+          gateway: 172.29.83.1
