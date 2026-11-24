@@ -45,4 +45,4 @@ Scanner text is untrusted. It is escaped, passed as data and rendered as plain t
 
 ## Reports
 
-Reports regroup the verified findings and are withheld if any finding is missing, repeated or different. They mark AI text and stay complete without it.
+Reports regroup the verified findings and are withheld if any finding is missing, repeated or different. They mark AI text and stay complete without it. A stored PDF is shown as outdated once the layout or an analysis changes.

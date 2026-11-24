@@ -1,6 +1,6 @@
 # Watchtower submission and verification
 
-Watchtower lets an evaluator register a website, confirm permission for an exact URL and inspect assessment records and findings. The Next.js application on loopback port 3000 calls Fastify on port 4000. Only the API contacts ZAP on port 8090. Prisma stores targets, assessments, assessment runs and findings in PostgreSQL 17. The assessment_runs table holds one operator receipt per scan type and assessment. The reports table is reserved and unused; reports are printed from the browser. Juice Shop uses the dedicated Docker network at http://juice-shop:3000/ and publishes its browser port on loopback.
+Watchtower lets an evaluator register a website, confirm permission for an exact URL and inspect assessment records and findings. The Next.js application on loopback port 3000 calls Fastify on port 4000. Only the API contacts ZAP on port 8090. Prisma stores targets, assessments, assessment runs and findings in PostgreSQL 17. The assessment_runs table holds one operator receipt per scan type and assessment. The reports table records stored PDF files. Watchtower generates, previews and downloads them. Juice Shop uses the dedicated Docker network at http://juice-shop:3000/ and publishes its browser port on loopback.
 
 ## Automated checks before the integration window
 

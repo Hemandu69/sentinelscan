@@ -36,6 +36,17 @@ The diagnostic CLI and HTTP discovery read the provider inventory. Global alerts
 
 GET /api/v1/integrations/zap/session-fingerprint returns a nonsecret sessionKey. Watchtower does not call it. The operator captures it with `npm.cmd run zap:session` in the API checkout while the run is in the current session. A receipt requires evidence captured during that session. The inventory alone has no trusted terminal cause. Import follows the [run evidence contract](run-evidence-design.md).
 
+## Reports
+
+| Method and path | Result |
+|---|---|
+| GET /api/v1/assessments/:id/reports | Status, whether generation is possible, and stored reports with time, size, pages, checksum, availability and whether a newer layout or analysis exists |
+| POST /api/v1/assessments/:id/reports | Empty body. Generates and stores a new PDF for a completed assessment. Earlier files stay. |
+| GET /api/v1/assessments/:id/reports/latest/pdf | The newest PDF. `view=preview` shows it inline. |
+| GET /api/v1/assessments/:id/reports/:reportId/pdf | One PDF of this assessment |
+
+The API renders Watchtower's report page with the installed Chrome or Edge, so Watchtower must be running. The browser may reach only this machine. The page counts as ready only after it has reconciled every finding, and the API compares its assessment and finding count with the database. Files live in `%LOCALAPPDATA%\SentinelScan\reports` under generated names; requests never contain a path. Every download is checked against its SHA-256.
+
 ## Operator-controlled assessment records
 
 | Read endpoint | Contents |
