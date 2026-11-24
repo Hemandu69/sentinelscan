@@ -1,5 +1,7 @@
 # SentinelScan API
 
+Part of [SentinelScan](https://github.com/Hemandu69/sentinelscan), a local college project. Clone it beside the other checkouts.
+
 Fastify 5, TypeScript, Prisma and PostgreSQL. Binds to 127.0.0.1:4000 for one local operator. Authentication is intentionally absent. This service alone holds the ZAP key and contacts ZAP. It starts and stops scans only through the controlled scan service, only for the approved demo address, and never requests a registered website itself.
 
 ## Configure
