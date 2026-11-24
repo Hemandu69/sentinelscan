@@ -22,14 +22,13 @@ Use the existing authorized Juice Shop assessment. Only the explicit local demo 
 
 | Route | Purpose |
 |---|---|
-| GET /api/v1/integrations/zap/session-fingerprint | Read a digest of the configured container lifetime, version-checked provider and session location. Capture it with `npm.cmd run zap:session` during the run. Watchtower does not call this route. |
 | GET /api/v1/assessments/:id/execution | Read saved run IDs, provider states, progress and timestamps from PostgreSQL. Works across API restarts. |
 | POST /api/v1/assessments/:id/zap-association | Save kind, scanId, sessionKey, exact target and confirmedOperatorReceipt. Bind the Spider first. |
 | POST /api/v1/assessments/:id/zap-sync | Refresh the two saved records from their original provider session. |
 | POST /api/v1/assessments/:id/cancel-tracking | Record local cancellation of any open assessment with explicit confirmation. Never stops the provider run. |
 | POST /api/v1/assessments/:id/zap-import | Check both receipts, read every scan-attributed alert, validate scope and commit normalized findings and completion together. |
 
-The session digest cannot detect reopening the same session file within the same container process. An ID or a newly computed digest cannot reconstruct a missing historical receipt. A changed session, ambiguous outcome, missing URL, partial response or changing alert-ID set keeps the assessment incomplete. A transient failure permits a retry with the original receipts. Sync runs on request. The application has no scan launcher or background execution worker.
+The session digest cannot detect reopening the same session file within the same container process. An ID or a newly computed digest cannot reconstruct a missing historical receipt. A changed session, ambiguous outcome, missing URL, partial response or changing alert-ID set keeps the assessment incomplete. A transient failure permits a retry with the original receipts. Sync runs on request. Watchtower can also launch a controlled scan of the demo site. See [the API contract](api-contract.md). Its first live launch remains to be accepted.
 
 The inventory normalizer confirms RUNNING. FINISHED, a percentage of 100 and unrecognized terminal labels leave the outcome UNKNOWN. The Spider stop path also sets FINISHED. The Active Scan inventory similarly lacks a distinct success reason. Fixture tests independently supply verified outcomes to exercise transactional imports. The production inventory reader cannot produce SUCCEEDED from its listing alone. Run-specific Spider results and Active Scan message IDs can corroborate destinations even for zero alerts. Missing request evidence leaves scope unresolved.
 

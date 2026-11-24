@@ -14,12 +14,16 @@ Ordinary destination validation checks HTTP(S) syntax and resolved IPv4 and IPv6
 
 Before import, verify that all results belong to the linked provider run and authorized scope. Treat stale IDs, mixed scope, incomplete reads and uncertain terminal outcomes as incomplete work. Explicit evidence of cancellation or failure must survive independently of the finding count.
 
+## Controlled scans
+
+Scan control is a fixed list of server-side ZAP operations against an approved target. The browser cannot supply a ZAP action, rule, policy or other destination. A start needs a fresh single-use consent token, a passing readiness check and no other scan. It ends the previous ZAP session, so unimported results there can no longer be imported. The scan stops above 90% memory, outside the authorized site, on unhealthy services, on ZAP errors or at its time limit. A stop that ZAP does not confirm is recorded as an unknown outcome.
+
 ## Optional AI analysis
 
 Disabled by default and server-side only. When enabled and selected, sanitized alert text leaves this machine for the configured provider. See [finding intelligence](finding-intelligence.md).
 
 ## Evidence handling
 
-Consent tokens expire after five minutes and are consumed on submission. The backend locks the active target and checks its canonical URL before creating a pending assessment. Import rechecks consent and the provider fingerprint, reads the active run's attributed alert IDs before and after fetching alerts, and validates normalized URLs. A failed final transaction rolls back the saved run observations, findings and completion together. Local tracking cancellation is available for every open assessment and has no effect on the provider process. The session fingerprint is nonsecret and is never fetched or attached automatically by Watchtower.
+Consent tokens expire after five minutes and are consumed on submission. The backend locks the active target and checks its canonical URL before creating a pending assessment. Import rechecks consent and the provider fingerprint, reads the active run's attributed alert IDs before and after fetching alerts, and validates normalized URLs. A failed final transaction rolls back the saved run observations, findings and completion together. Local tracking cancellation is available for every open assessment and has no effect on the provider process. The session fingerprint is never sent to the browser. A controlled scan attaches its own receipts on the server.
 
 The current normalizer redacts supplied evidence and removes credentials, query strings and fragments from finding URLs. Store only sanitized summaries in project documentation. Exclude raw alerts, scan sessions, reports containing sensitive material, database dumps, Docker volume contents, local configuration and secrets from Git.

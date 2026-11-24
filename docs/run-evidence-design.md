@@ -80,6 +80,8 @@ Verified live: the `scanProgress` shape and its agreement with the log, retained
 
 ## Operator rules for an importable run
 
+A controlled scan started in Watchtower applies these rules itself. They remain necessary for scans run by hand.
+
 1. Use a container whose log does not contain the API key (after rotation with `zap-log4j2.properties`).
 2. Create a new named ZAP session first. Run exactly one spider, then one active scan.
 3. Save each receipt after that run starts and while the container is untouched.

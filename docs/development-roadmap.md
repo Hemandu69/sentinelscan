@@ -8,7 +8,7 @@
 | 3 · Provider integration | Verified once live | Authenticated version and alert-page reads passed against ZAP 2.17.0. Missing and invalid keys closed the connection, with successful valid-key controls. The inspection command read both scan listings; each returned zero runs. |
 | 4 · Assessment records | Verified once live | Operator receipt association, refresh and transactional import are available. One live import and its repetition are verified. Restart verification remains pending. |
 | 5 · Web foundation | Implemented | The operator verified website registration and three operational service indicators on Windows. |
-| 6 · Product workflow | Implemented in part | Assessment detail, findings exploration and a printable assessment report are available. Browser PDF export and the integrated operator journey await acceptance. |
+| 6 · Product workflow | Implemented in part | Website workspace, AI Analysis, technical findings, PDF reports, comparison and controlled scans are implemented. The first live scan through Watchtower awaits acceptance. |
 | 7 · Quality | Fixture-verified | Built pages pass fixture browser checks for layout, structure, contrast, loading, empty, error and print states. The live integrated workflow remains unverified. |
 | 8 · Handover | Documented, unverified | Reproduce setup and local recovery on Windows. |
 

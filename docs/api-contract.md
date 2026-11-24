@@ -34,7 +34,20 @@ The diagnostic CLI and HTTP discovery read the provider inventory. Global alerts
 | POST /cancel-tracking | confirmed=true. Closes any open assessment locally, including archived and non-demo websites. Returns status and providerScanStopped=false. Never contacts ZAP. |
 | POST /zap-import | Empty object. Returns status and findingCount after verified import or idempotent replay. Missing evidence answers 409 with fixed `reasons` codes. Trustworthy stop or error evidence closes the assessment as CANCELLED or FAILED with a null findingCount. |
 
-GET /api/v1/integrations/zap/session-fingerprint returns a nonsecret sessionKey. Watchtower does not call it. The operator captures it with `npm.cmd run zap:session` in the API checkout while the run is in the current session. A receipt requires evidence captured during that session. The inventory alone has no trusted terminal cause. Import follows the [run evidence contract](run-evidence-design.md).
+The session fingerprint is not available over HTTP. The operator captures it with `npm.cmd run zap:session` in the API checkout while the run is in the current session. A receipt requires evidence captured during that session. The inventory alone has no trusted terminal cause. Import follows the [run evidence contract](run-evidence-design.md).
+
+## Controlled scans
+
+| Method and path | Result |
+|---|---|
+| GET /api/v1/scans/policy | Approved targets and the fixed configuration |
+| GET /api/v1/scans/readiness | Read-only checks: ready and fixed reason codes |
+| POST /api/v1/scans | targetId, url, authorized=true, authorizationTextVersion, confirmationToken, configuration="standard", requestKey (UUID). Returns assessmentId. Repeating a requestKey never starts a second scan. 409 SCAN_NOT_READY carries reasons. |
+| GET /api/v1/assessments/:id/scan | Status, tracked, stage, reported progress, memory and stop state |
+| POST /api/v1/assessments/:id/scan/cancel | confirmed=true. Stops the scans through ZAP. 409 once results are being verified. |
+| GET /api/v1/assessments/:id/comparison?earlier=:id | new, persistent, changed and notSeenAgain for two completed assessments of one website. Not comparable without verified evidence for the same address, contract and rules. resolved is always empty. |
+
+While a controlled scan owns an assessment, the manual receipt, sync, import and cancel-tracking routes answer 409 SCAN_IN_PROGRESS.
 
 ## Reports
 

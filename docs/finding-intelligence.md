@@ -37,7 +37,7 @@ The dependency is the official `@anthropic-ai/sdk` 1.13.0, used only on the serv
 
 **Sent:** alert title, description, severity, confidence, rule, method, parameter, affected URLs without query or fragment, redacted evidence, scanner remediation, references, weakness IDs. **Never sent:** keys, cookies, tokens, sessions, fingerprints, database values, assessment IDs, response bodies. Pattern redaction is a second line of defense and cannot recognize every secret.
 
-**Accepted only if** the answer is JSON of the exact shape and contains no markup, unknown URL, unknown endpoint, unknown CVE or CWE, or claim of an applied fix, and its priority does not exceed what the scanner severity allows. Code examples are removed, because the technology is unknown. An unusable answer is retried once. These checks cannot prove that an explanation is right.
+**Accepted only if** the answer is JSON of the exact shape and contains no markup, unknown URL, unknown endpoint, unknown CVE or CWE, or claim of an applied fix, and its priority does not exceed what the scanner severity allows. Code examples are removed, because the technology is unknown. An unusable answer is retried once. An analysis whose input no longer matches the stored finding is shown as outdated. These checks cannot prove that an explanation is right.
 
 Scanner text is untrusted. It is escaped, passed as data and rendered as plain text. Instructions inside it cannot change severity, status or scope, because the model has no such fields.
 

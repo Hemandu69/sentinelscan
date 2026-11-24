@@ -4,10 +4,10 @@ One Windows host runs a shared workspace. The Next.js Watchtower frontend commun
 
 | Component | Host interface | Current role |
 |---|---|---|
-| Web | 127.0.0.1:3000 | Dashboard, website details, assessment records, findings and print view |
+| Web | 127.0.0.1:3000 | Overview, website workspaces (scans, AI Analysis, findings, reports) and assessment records |
 | API | 127.0.0.1:4000 | Local HTTP service |
 | PostgreSQL | 127.0.0.1:5432 | Application database and schema named `sentinelscan`; data lives in a named volume |
-| ZAP | 127.0.0.1:8090 | Authenticated provider reads from the configured daemon |
+| ZAP | 127.0.0.1:8090 | Authenticated reads, plus fixed-target scan control by the API |
 | Juice Shop | 127.0.0.1:3001 | Authorized demonstration site. Containers reach it at http://juice-shop:3000/. |
 
 ## Data ownership
@@ -21,6 +21,10 @@ One Windows host runs a shared workspace. The Next.js Watchtower frontend commun
 | run_evidence | Insert-only contract facts, outcome and digest per receipt. |
 | finding_analyses | Pending migration. Optional AI interpretation per finding, separate from scanner facts. |
 | reports | Belongs to an assessment. One row per stored PDF: time, type, template version, SHA-256 and generated file name. |
+
+## Controlled scans
+
+Watchtower can start a scan of an approved target. The API checks readiness, records consent, starts a fresh ZAP session, runs the spider and the active scan, watches health, memory, scope and errors, and then uses the same evidence contract and import as an operator run. Only `http://juice-shop:3000/` and one fixed configuration are approved. The browser sends no scanner policy or address beyond the consented one. Progress is held in memory. After an API restart a running scan is no longer followed and needs an outcome check. This path is verified with fixtures; no live scan has been launched through it yet.
 
 ## Operator-run design
 
