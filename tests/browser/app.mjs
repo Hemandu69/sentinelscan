@@ -337,6 +337,14 @@ try {
     await page.getByRole("alert").filter({ hasText: "not supplied sufficient successful completion" }).waitFor();
     await page.getByText("Final results are unavailable for this check.").waitFor();
   });
+  await check("an ended run with unknown outcome is not shown as running", { state: { status: "OUTCOME_UNKNOWN", runs: [run("spider", "FINISHED", 100), run("active", "FINISHED", 100)] } }, async (page) => {
+    for (const path of ["/assessments", "/assessments/" + id]) {
+      await page.goto(web + path);
+      await page.getByText(/ENDED · OUTCOME UNKNOWN/).first().waitFor();
+      assert.doesNotMatch(await page.locator("main").innerText(), /ACTIVE_SCAN_RUNNING|COMPLETED ·/);
+    }
+    await page.getByRole("button", { name: "Cancel local tracking" }).waitFor();
+  });
   await check("cancellation is confirmed and described as local", {}, async (page) => {
     const prompts = [];
     let accept = false;

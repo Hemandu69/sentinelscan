@@ -3,7 +3,13 @@ import Link from "next/link";
 import { useState, useEffect, useMemo, type ReactNode } from "react";
 import { z } from "zod";
 import { describeError, request } from "../lib/api";
-import { detailFor, assessments, findings, scans } from "../lib/records";
+import {
+  detailFor,
+  assessments,
+  findings,
+  scans,
+  statusLabel,
+} from "../lib/records";
 import { Navigation } from "./navigation";
 import { RunReceipts } from "./run-receipts";
 import { ObservedRun } from "./observed-run";
@@ -105,7 +111,7 @@ export function AssessmentHistory({ targetId }: { targetId?: string }) {
               <p>{row.targetUrlSnapshot}</p>
               <small>{row.id}</small>
               <p>
-                {row.status} · Requested {date(row.requestedAt)}
+                {statusLabel(row.status)} · Requested {date(row.requestedAt)}
                 {row.findingCount !== null &&
                   " · Findings: " + row.findingCount}
               </p>
@@ -319,7 +325,8 @@ export function RecordsPage({
                   <p>{row.targetUrlSnapshot}</p>
                   <small>{row.id}</small>
                   <p>
-                    {row.status} · Requested {date(row.requestedAt)}
+                    {statusLabel(row.status)} · Requested{" "}
+                    {date(row.requestedAt)}
                   </p>
                   <p>
                     First observed running:{" "}

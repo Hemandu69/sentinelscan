@@ -6,6 +6,12 @@ import { describeError } from "../lib/api";
 import { loadReport } from "../lib/report";
 import "./assessment-report.css";
 
+const time = (value: string) =>
+  new Date(value).toLocaleString(undefined, {
+    dateStyle: "medium",
+    timeStyle: "long",
+  });
+
 export function AssessmentReport({ id }: { id: string }) {
   const [revision, refresh] = useState(0);
   const [report, setReport] =
@@ -73,14 +79,14 @@ export function AssessmentReport({ id }: { id: string }) {
             <br />
             Status {report.assessment.status}
             <br />
-            Requested {new Date(report.assessment.requestedAt).toLocaleString()}
+            Requested {time(report.assessment.requestedAt)}
             <br />
             First observed running{" "}
             {report.assessment.startedAt
-              ? new Date(report.assessment.startedAt).toLocaleString()
+              ? time(report.assessment.startedAt)
               : "unrecorded"}
             <br />
-            Completed {new Date(report.assessment.finishedAt!).toLocaleString()}
+            Results verified and imported {time(report.assessment.finishedAt!)}
           </p>
           <h2>
             {report.items.length} recorded{" "}
@@ -94,6 +100,72 @@ export function AssessmentReport({ id }: { id: string }) {
               </div>
             ))}
           </dl>
+          {report.assessment.evidence ? (
+            <section aria-labelledby="evidence">
+              <h2 id="evidence">Verified run evidence</h2>
+              <p>
+                Spider {report.assessment.evidence.spider.scanId} completed
+                naturally: {time(report.assessment.evidence.spider.startedAt)} to{" "}
+                {time(report.assessment.evidence.spider.endedAt)},{" "}
+                {report.assessment.evidence.spider.results} addresses, all on the
+                authorized origin.
+              </p>
+              <p>
+                Active scan {report.assessment.evidence.active.scanId} completed
+                naturally: {time(report.assessment.evidence.active.startedAt)} to{" "}
+                {time(report.assessment.evidence.active.endedAt)}.{" "}
+                {report.assessment.evidence.active.completedRules} rules
+                completed, {report.assessment.evidence.active.skippedRules.length}{" "}
+                skipped
+                {report.assessment.evidence.active.skippedRules.length > 0 &&
+                  " (" +
+                    report.assessment.evidence.active.skippedRules.join("; ") +
+                    ")"}
+                , {report.assessment.evidence.active.stoppedRules} stopped.
+              </p>
+              <p>
+                ZAP attributed {report.assessment.evidence.active.alerts} alerts to
+                this scan. After removing duplicates, {report.items.length}{" "}
+                {report.items.length === 1 ? "finding is" : "findings are"}{" "}
+                recorded.
+              </p>
+              <p>
+                {report.assessment.evidence.active.requests} requests reported,{" "}
+                {report.assessment.evidence.active.messages} stored messages, every
+                message address on the authorized origin.
+              </p>
+              {report.assessment.evidence.reconciliations.map((item) => (
+                <p key={item.ruleId}>
+                  Approved exception, rule {item.ruleId} ({item.ruleName}):{" "}
+                  {item.kind === "HOST_HEADER" ? (
+                    <>
+                      {item.acceptedDiscrepancy} requests to {item.targetOrigin}{" "}
+                      carried a Host header forged by this rule, equal to its{" "}
+                      {item.observedRequests} reported requests. Values:{" "}
+                      {item.hostValues.join(", ")}. The header alone does not show
+                      where a connection went; acceptance relies on the request
+                      address, scan host, rule timing and exact count together.
+                    </>
+                  ) : (
+                    <>
+                      {item.acceptedDiscrepancy} raw-socket probes have no stored
+                      message, equal to its {item.observedRequests} reported
+                      requests. Their destination is supported only by the scan
+                      host {item.targetOrigin} and the rule record.
+                    </>
+                  )}
+                </p>
+              ))}
+              <p>
+                Evidence contract {report.assessment.evidence.contract}, collected{" "}
+                {time(report.assessment.evidence.collectedAt)}. Session{" "}
+                {report.assessment.evidence.sessionKey}. Evidence SHA-256{" "}
+                {report.assessment.evidence.digest}.
+              </p>
+            </section>
+          ) : (
+            <p role="alert">Verified run evidence is unavailable.</p>
+          )}
           <section aria-labelledby="coverage">
             <h2 id="coverage">Coverage limits</h2>
             <ul>
@@ -103,11 +175,16 @@ export function AssessmentReport({ id }: { id: string }) {
               </li>
               <li>
                 Findings come only from alerts that ZAP attributed to this
-                active scan. Passive alerts are not included.
+                active scan. Passive alerts are not included. ZAP records at
+                most 10 passive alerts per rule in this configuration.
               </li>
               <li>
                 Duplicate alerts for the same rule, address, method and
                 parameter are recorded once.
+              </li>
+              <li>
+                This is not full OWASP coverage. Skipped rules and areas that the
+                spider did not reach were not tested.
               </li>
               <li>
                 The absence of a finding does not show that the website is

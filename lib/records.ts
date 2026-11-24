@@ -14,8 +14,45 @@ function consistentCount(row: { status: string; findingCount: number | null }) {
   return (row.status === "COMPLETED") === (row.findingCount !== null);
 }
 export const assessment = assessmentFields.refine(consistentCount);
+const when = z.string().refine((value) => Number.isFinite(Date.parse(value)));
+const count = z.number().int().nonnegative();
+export const runEvidence = z.object({
+  contract: z.string(),
+  collectedAt: when,
+  digest: z.string().regex(/^[a-f0-9]{64}$/),
+  sessionKey: z.string().regex(/^[a-f0-9]{64}$/),
+  spider: z.object({ scanId: z.string(), startedAt: when, endedAt: when, results: count }),
+  active: z.object({
+    scanId: z.string(),
+    startedAt: when,
+    endedAt: when,
+    completedRules: count,
+    skippedRules: z.array(z.string()),
+    stoppedRules: count,
+    alerts: count,
+    requests: count,
+    messages: count,
+  }),
+  reconciliations: z.array(
+    z.object({
+      ruleId: z.string(),
+      ruleName: z.string(),
+      kind: z.enum(["HOST_HEADER", "RAW_SOCKET"]),
+      expectedRequests: count,
+      observedRequests: count,
+      observedMessages: count,
+      acceptedDiscrepancy: count,
+      targetOrigin: z.string(),
+      hostValues: z.array(z.string()),
+    }),
+  ),
+});
+export function statusLabel(status: string) {
+  return status === "OUTCOME_UNKNOWN" ? "ENDED · OUTCOME UNKNOWN" : status;
+}
 export const assessmentDetail = assessmentFields
   .extend({
+    evidence: runEvidence.nullish(),
     severities: z
       .array(
         z.object({

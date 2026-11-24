@@ -44,6 +44,23 @@ test("detail matches the requested record and only displays reconciled final cou
     false,
   );
 });
+test("run evidence is optional, strict and labels unknown outcomes", async () => {
+  const { runEvidence, statusLabel } = await import("../lib/records.ts");
+  const evidence = {
+    contract: "1.1",
+    collectedAt: "2026-11-24T06:48:31.285Z",
+    digest: "a".repeat(64),
+    sessionKey: "b".repeat(64),
+    spider: { scanId: "0", startedAt: "2026-11-24T06:34:20.915690255Z", endedAt: "2026-11-24T06:34:39.026403793Z", results: 72 },
+    active: { scanId: "0", startedAt: "2026-11-24T06:34:55.118271264Z", endedAt: "2026-11-24T06:39:53.988294585Z", completedRules: 51, skippedRules: ["x"], stoppedRules: 0, alerts: 24, requests: 3005, messages: 3002 },
+    reconciliations: [{ ruleId: "20015", ruleName: "x", kind: "RAW_SOCKET", expectedRequests: 3, observedRequests: 3, observedMessages: 0, acceptedDiscrepancy: 3, targetOrigin: "http://juice-shop:3000", hostValues: [] }],
+  };
+  assert.equal(runEvidence.safeParse(evidence).success, true);
+  for (const change of [{ digest: "x" }, { active: { ...evidence.active, alerts: -1 } }, { collectedAt: "later" }])
+    assert.equal(runEvidence.safeParse({ ...evidence, ...change }).success, false);
+  assert.equal(statusLabel("OUTCOME_UNKNOWN"), "ENDED · OUTCOME UNKNOWN");
+  assert.equal(statusLabel("COMPLETED"), "COMPLETED");
+});
 test("provider listings preserve unknown scope, state and progress", () => {
   const input = {
     provider: { endpoint: "http://127.0.0.1:8090", version: "2.17.0" },
