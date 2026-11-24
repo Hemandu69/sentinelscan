@@ -21,6 +21,15 @@ export type ActiveLog = {
   skippedRules: string[];
   stoppedRules: number;
   alerts: number;
+  messagesSent: number;
+  rules: Record<"CloudMetadataScanRule" | "HeartBleedActiveScanRule", RuleLog | null>;
+};
+// Only the two rules named by contract v1.1 are kept individually.
+export type RuleLog = {
+  startedAt: string;
+  endedAt: string;
+  messages: number;
+  completed: boolean;
 };
 export type RunLog = {
   spider: SpiderLog | null;
@@ -93,6 +102,11 @@ export function parseRunLog(
   const stopped: string[] = [];
   const hosts = new Set<string>();
   const ruleStarts: string[] = [];
+  let messagesSent = 0;
+  const named = new Map<string, RuleLog>();
+  const open = new Map<string, string>();
+  const close = (rule: string, endedAt: string, messages: number, completed: boolean) =>
+    named.set(rule, { startedAt: open.get(rule) ?? "", endedAt, messages, completed });
   const completed: string[] = [];
   const skipped: { key: string; reason: string }[] = [];
   let stoppedRules = 0,
@@ -148,20 +162,25 @@ export function parseRunLog(
       ) {
         hosts.add(match[1]);
         ruleStarts.push(match[1] + "|" + match[2]);
+        open.set(match[2], at);
       } else if (
         (match =
-          /^completed host\/plugin (\S+) \| (\w+) in [\d.,]+s with \d+ message\(s\) sent and (\d+) alert\(s\) raised\.$/.exec(message))
+          /^completed host\/plugin (\S+) \| (\w+) in [\d.,]+s with (\d+) message\(s\) sent and (\d+) alert\(s\) raised\.$/.exec(message))
       ) {
         hosts.add(match[1]);
+        messagesSent += Number(match[3]);
+        close(match[2], at, Number(match[3]), true);
         completed.push(match[1] + "|" + match[2]);
-        alerts += Number(match[3]);
+        alerts += Number(match[4]);
       } else if (
         (match =
-          /^skipped plugin (?:\[([^\]]{1,200})\] )?(\S+) \| (\w+) in [\d.,]+s with \d+ message\(s\) sent and (\d+) alert\(s\) raised\.$/.exec(message))
+          /^skipped plugin (?:\[([^\]]{1,200})\] )?(\S+) \| (\w+) in [\d.,]+s with (\d+) message\(s\) sent and (\d+) alert\(s\) raised\.$/.exec(message))
       ) {
         hosts.add(match[2]);
+        messagesSent += Number(match[4]);
+        close(match[3], at, Number(match[4]), false);
         skipped.push({ key: match[2] + "|" + match[3], reason: match[1] ?? "" });
-        alerts += Number(match[4]);
+        alerts += Number(match[5]);
       } else if (message.startsWith("stopped host/plugin ")) stoppedRules++;
       else if (
         (match = /^completed host (\S+) in [\d.,]+s with (\d+) alert\(s\) raised\.$/.exec(message))
@@ -225,6 +244,11 @@ export function parseRunLog(
       skippedRules: skipped.map((row) => row.reason).sort(),
       stoppedRules,
       alerts,
+      messagesSent,
+      rules: {
+        CloudMetadataScanRule: named.get("CloudMetadataScanRule") ?? null,
+        HeartBleedActiveScanRule: named.get("HeartBleedActiveScanRule") ?? null,
+      },
     };
   }
   return { spider, active, anomalies: [...anomalies].sort() };

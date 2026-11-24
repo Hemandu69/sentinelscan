@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import type { PrismaClient } from "@prisma/client";
 import { z } from "zod";
 import { ApiError } from "../../lib/errors.ts";
+import type { Facts } from "../../integrations/zap/evidence.ts";
 
 const page = z.strictObject({
   offset: z.coerce.number().int().min(0).max(2147483646).default(0),
@@ -33,10 +34,63 @@ function assessment({ target, _count, errorCode, ...row }: AssessmentRow) {
   return {
     ...row,
     website: target.displayName,
-    outcomeExplanation: Object.hasOwn(explanations, errorCode ?? "")
-      ? explanations[errorCode!]
-      : null,
+    outcomeExplanation:
+      row.status === "OUTCOME_UNKNOWN"
+        ? "The scans ended, but evidence of how they ended has not been verified. No results were imported."
+        : Object.hasOwn(explanations, errorCode ?? "")
+          ? explanations[errorCode!]
+          : null,
     findingCount: row.status === "COMPLETED" ? _count.findings : null,
+  };
+}
+export function summarizeEvidence(
+  rows: {
+    kind: string;
+    facts: unknown;
+    factsDigest: string;
+    collectedAt: Date;
+    run: { scanId: string };
+  }[],
+) {
+  const spider = rows.find((row) => row.kind === "spider"),
+    active = rows.find((row) => row.kind === "active");
+  if (rows.length !== 2 || !spider || !active) return null;
+  const facts = active.facts as Facts;
+  return {
+    contract: facts.contract,
+    collectedAt: active.collectedAt,
+    digest: active.factsDigest,
+    sessionKey: facts.sessionKey,
+    spider: {
+      scanId: spider.run.scanId,
+      startedAt: facts.log.spider!.startedAt,
+      endedAt: facts.log.spider!.endedAt,
+      results: facts.scope.spider.count,
+    },
+    active: {
+      scanId: active.run.scanId,
+      startedAt: facts.log.active!.startedAt,
+      endedAt: facts.log.active!.endedAt,
+      completedRules: facts.log.active!.completedRules,
+      skippedRules: facts.log.active!.skippedRules,
+      stoppedRules: facts.log.active!.stoppedRules,
+      alerts: facts.attributedAlerts,
+      requests: facts.counts.requests,
+      messages: facts.scope.active.count,
+    },
+    reconciliations: Object.values(facts.reconciliations)
+      .filter((item) => item.result === "ACCEPTED")
+      .map((item) => ({
+        ruleId: item.ruleId,
+        ruleName: item.ruleName,
+        kind: item.kind,
+        expectedRequests: item.expectedRequests,
+        observedRequests: item.observedRequests,
+        observedMessages: item.observedMessages,
+        acceptedDiscrepancy: item.acceptedDiscrepancy,
+        targetOrigin: item.targetOrigin,
+        hostValues: [...new Set(item.hostHeaders.map((row) => row.host))].sort(),
+      })),
   };
 }
 export function registerRecords(app: FastifyInstance, db: PrismaClient) {
@@ -72,8 +126,23 @@ export function registerRecords(app: FastifyInstance, db: PrismaClient) {
             orderBy: { normalizedSeverity: "asc" },
           })
         : null;
+    // Only verified runs of a completed assessment are summarized.
+    const evidence =
+      row.status === "COMPLETED"
+        ? await db.runEvidence.findMany({
+            where: { assessmentId: id, outcome: "SUCCEEDED" },
+            select: {
+              kind: true,
+              facts: true,
+              factsDigest: true,
+              collectedAt: true,
+              run: { select: { scanId: true } },
+            },
+          })
+        : [];
     return {
       ...assessment(row),
+      evidence: summarizeEvidence(evidence),
       severities:
         severityCounts?.map((group) => ({
           severity: group.normalizedSeverity,

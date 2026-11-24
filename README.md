@@ -27,11 +27,12 @@ Copy `.env.example` to `.env` on a fresh checkout and keep it private. Preserve 
 | `startedAt` | First time SentinelScan observed an associated run as `RUNNING`. Never set at creation, and not the provider's own start time. |
 | `finishedAt` | Time of the local transition to COMPLETED, FAILED or CANCELLED |
 | PENDING, INITIALIZING | No associated run has been observed running |
-| SPIDER_RUNNING, ACTIVE_SCAN_RUNNING | Last recorded activity. A run that later reads FINISHED has an unknown outcome, so the assessment stays open. |
+| SPIDER_RUNNING, ACTIVE_SCAN_RUNNING | Last recorded activity. Refreshing progress after the active run ends moves the assessment to OUTCOME_UNKNOWN. |
+| OUTCOME_UNKNOWN | The scans ended, but how is not established. Not a success, failure or cancellation. Verified evidence may still complete it, and the operator may cancel it. |
 | PROCESSING_RESULTS | Exists only inside the import transaction |
 | COMPLETED | Findings and completion committed together |
 | CANCELLED | Local tracking ended by the operator, or a provider cancellation reported by a trusted outcome source |
 
 `POST /api/v1/assessments/:id/cancel-tracking` works for any open assessment, including archived and non-demo websites, because it changes local records only. It never contacts ZAP and returns `providerScanStopped: false`. Association, refresh and import still require the authorized demo scope.
 
-The inventory adapter cannot produce SUCCEEDED, FAILED or CANCELLED. Only evidence contract v1 can, through `src/integrations/zap/run-log.ts` and `evidence.ts`. It is fixture-tested, not live-verified, and migration `202611230001_run_evidence` is applied in the existing workspace. See the documentation repository's `docs/run-evidence-design.md`.
+The inventory adapter cannot produce SUCCEEDED, FAILED or CANCELLED. Only evidence contract v1.1 can, through `src/integrations/zap/run-log.ts` and `evidence.ts`. It was verified by one live import on 24 November 2026. See the documentation repository's `docs/run-evidence-design.md`.

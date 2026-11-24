@@ -2,16 +2,18 @@ import { createHash } from "node:crypto";
 import { ApiError } from "../../lib/errors.ts";
 import type { ZapClient } from "./client.ts";
 import type { RunOutcome } from "./outcome.ts";
+import { reconcile, type HostMismatch, type Reconciliation } from "./exceptions.ts";
 import { parseRunLog, type ReadLog, type RunLog } from "./run-log.ts";
 
-// Evidence contract v1. See docs/run-evidence-design.md in the documentation repository.
-export const contractVersion = 1;
+// Evidence contract v1.1, stored as contract_version 2. See docs/run-evidence-design.md in the documentation repository.
+export const contractVersion = 2;
+export const contractName = "1.1";
 const acceptedSkips = new Set(["no Active Scan OAST service is selected"]);
 
 export type Receipt = { scanId: string; associatedAt: Date };
 export type Receipts = { spider: Receipt; active: Receipt };
 export type Facts = {
-  contract: number;
+  contract: string;
   sessionKey: string;
   target: string;
   log: RunLog;
@@ -19,9 +21,13 @@ export type Facts = {
   counts: { requests: number | null; alerts: number | null };
   attributedAlerts: number;
   progress: Awaited<ReturnType<ZapClient["scanProgress"]>>;
-  scope: Record<"spider" | "active", { evidence: string; count: number }>;
+  scope: {
+    spider: { evidence: string; count: number };
+    active: { evidence: string; count: number; mismatches: HostMismatch[] };
+  };
   credentialInLog: boolean;
   resourceFailure: boolean;
+  reconciliations: { hostHeaders: Reconciliation; rawSocket: Reconciliation };
 };
 export type Judgement = { outcome: RunOutcome; reasons: string[] };
 
@@ -58,8 +64,8 @@ export async function collectEvidence(
   )
     throw new ApiError(409, "ZAP_RUN_OUTSIDE_TARGET");
   if (!spider || !active) throw new ApiError(404, "ZAP_RUN_NOT_FOUND");
-  const facts: Facts = {
-    contract: contractVersion,
+  const base = {
+    contract: contractName,
     sessionKey,
     target,
     log,
@@ -72,7 +78,7 @@ export async function collectEvidence(
     progress: await zap.scanProgress(receipts.active.scanId),
     scope: {
       spider: await zap.inspectDemoScope("spider", receipts.spider.scanId),
-      active: await zap.inspectDemoScope("active", receipts.active.scanId),
+      active: await zap.readActiveMessages(receipts.active.scanId),
     },
     credentialInLog:
       zap.mentionsCredential(raw.text) || zap.mentionsCredential(raw.errors),
@@ -80,7 +86,7 @@ export async function collectEvidence(
   };
   if ((await getSession()) !== sessionKey)
     throw new ApiError(409, "ZAP_SESSION_CHANGED");
-  return facts;
+  return { ...base, reconciliations: reconcile(base) };
 }
 
 // Any missing or contradictory item keeps the outcome UNKNOWN. Explicit stops and errors are
@@ -90,7 +96,7 @@ export function judge(
   receipts: Receipts,
 ): Record<"spider" | "active", Judgement> {
   const shared = new Set<string>(facts.log.anomalies);
-  if (facts.contract !== contractVersion) shared.add("CONTRACT_VERSION");
+  if (facts.contract !== contractName) shared.add("CONTRACT_VERSION");
   if (facts.credentialInLog) shared.add("CREDENTIAL_IN_LOG");
   if (facts.resourceFailure) shared.add("RESOURCE_FAILURE");
   const origin = new URL(facts.target).origin;
@@ -138,11 +144,19 @@ export function judge(
     )
       activeReasons.add("PROGRESS_RULES");
   }
-  if (facts.scope.active.evidence !== "OBSERVED_TARGET_ORIGIN")
+  // Recomputed here, so a stored reconciliation can never justify itself.
+  const { reconciliations: stored, ...base } = facts;
+  const computed = reconcile(base);
+  if (canonical(stored) !== canonical(computed))
+    activeReasons.add("RECONCILIATION_CHANGED");
+  if (
+    facts.scope.active.evidence !== "OBSERVED_TARGET_ORIGIN" ||
+    computed.hostHeaders.result === "REJECTED"
+  )
     activeReasons.add("ACTIVE_SCOPE");
   if (
     facts.counts.requests === null ||
-    facts.counts.requests !== facts.scope.active.count
+    computed.rawSocket.result === "REJECTED"
   )
     activeReasons.add("MESSAGES_INCOMPLETE");
   if (

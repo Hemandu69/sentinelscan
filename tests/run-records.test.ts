@@ -121,10 +121,20 @@ function setup() {
         {
           origin: "http://juice-shop:3000",
           rules: { complete: 51, skipped: 1, running: 0, pending: 0, unknown: 0 },
+          requests: 1968,
+          named: [
+            { id: "20015", name: "Heartbleed OpenSSL Vulnerability", status: "Complete", requests: 3 },
+            { id: "90034", name: "Cloud Metadata Potentially Exposed", status: "Complete", requests: 13 },
+          ],
         },
       ],
     })),
     inspectDemoScope: async () => ({ evidence: "OBSERVED_TARGET_ORIGIN", count: 5 }),
+    readActiveMessages: vi.fn(async () => ({
+      evidence: "OBSERVED_TARGET_ORIGIN",
+      count: 5,
+      mismatches: [] as { messageId: string; host: string; sentAt: number }[],
+    })),
     mentionsCredential: () => false,
   };
   const stamp = vi.fn(async () => session);
@@ -498,7 +508,7 @@ test("startedAt records the first observed RUNNING state and nothing else", asyn
     await f.close();
   }
 });
-test("a run that stops being listed as RUNNING keeps an unknown outcome and stays open", async () => {
+test("a run that stops being listed as RUNNING shows an unknown outcome and stays open", async () => {
   const f = setup();
   try {
     await f.bind("spider");
@@ -508,7 +518,7 @@ test("a run that stops being listed as RUNNING keeps an unknown outcome and stay
     f.f.text = "";
     f.row.progress = 100;
     expect((await f.call("zap-sync")).json()).toMatchObject({
-      status: "ACTIVE_SCAN_RUNNING",
+      status: "OUTCOME_UNKNOWN",
       runs: [{ state: "FINISHED" }, { state: "FINISHED" }],
     });
     expect((await f.call("zap-import")).json().code).toBe(
@@ -546,8 +556,8 @@ test("contract evidence completes import, stores both evidence rows and repeats 
     f.row.reportedOrigin = null as unknown as string; // As in ZAP 2.17.0.
     expect((await f.call("zap-import")).json()).toEqual({ status: "COMPLETED", findingCount: 0 });
     expect(f.state.evidence.map((row) => [row[1], row[2], row[3], row[4]])).toEqual([
-      ["spider", 1, session, "SUCCEEDED"],
-      ["active", 1, session, "SUCCEEDED"],
+      ["spider", 2, session, "SUCCEEDED"],
+      ["active", 2, session, "SUCCEEDED"],
     ]);
     f.zap.scanProgress.mockClear();
     expect((await f.call("zap-import")).json()).toEqual({ status: "COMPLETED", findingCount: 0 });
@@ -628,5 +638,74 @@ test("absent evidence storage and a failed insert leave the assessment unchanged
     expect(f.state).toMatchObject({ status: "ACTIVE_SCAN_RUNNING", evidence: [], count: 0 });
   } finally {
     await f.close();
+  }
+});
+
+const host = (i: number) =>
+  ["169.254.169.254", "aws.zaproxy.org", "metadata.google.internal", "metadata.oraclecloud.com", "100.100.100.200", "alibaba.zaproxy.org"][i % 6];
+function exceptional(f: Awaited<ReturnType<typeof finished>>, count = 13, missing = 3) {
+  const start = /^(\S+) .*start host \S+ \| CloudMetadataScanRule/m.exec(completedLog)![1];
+  const mismatches = Array.from({ length: count }, (_, i) => ({ messageId: String(i + 1), host: host(i), sentAt: Date.parse(start) + 5 }));
+  f.zap.readActiveMessages.mockImplementation(async () => ({ evidence: "OBSERVED_TARGET_ORIGIN", count: 3002, mismatches }));
+  f.row.requests = 3002 + missing;
+}
+test("import stores both approved reconciliations and repeats safely", async () => {
+  const f = await finished();
+  try {
+    exceptional(f);
+    for (let i = 0; i < 2; i++)
+      expect((await f.call("zap-import")).json()).toEqual({ status: "COMPLETED", findingCount: 0 });
+    expect(f.state.evidence).toHaveLength(2);
+    const facts = JSON.parse(String(f.state.evidence[1][6]));
+    expect(facts.reconciliations.hostHeaders).toMatchObject({ result: "ACCEPTED", acceptedDiscrepancy: 13 });
+    expect(facts.reconciliations.rawSocket).toMatchObject({ result: "ACCEPTED", acceptedDiscrepancy: 3 });
+  } finally {
+    await f.close();
+  }
+});
+test.each([[12, 3, "ACTIVE_SCOPE"], [14, 3, "ACTIVE_SCOPE"], [13, 2, "MESSAGES_INCOMPLETE"], [13, 4, "MESSAGES_INCOMPLETE"]])(
+  "import refuses %i mismatches with %i missing messages",
+  async (count, missing, reason) => {
+    const f = await finished();
+    try {
+      exceptional(f, count, missing);
+      expect((await f.call("zap-import")).json()).toEqual({ code: "ZAP_SUCCESS_OR_SCOPE_UNVERIFIED", reasons: [reason] });
+      expect(f.state).toMatchObject({ evidence: [], count: 0 });
+    } finally {
+      await f.close();
+    }
+  },
+);
+test("a second collection with a different mismatch stores nothing", async () => {
+  const f = await finished();
+  try {
+    exceptional(f);
+    f.zap.readAttributedFindings.mockImplementationOnce(async () => {
+      exceptional(f);
+      const value = await f.zap.readActiveMessages();
+      value.mismatches[0].sentAt += 1;
+      return [];
+    });
+    expect((await f.call("zap-import")).json().code).toBe("ZAP_EVIDENCE_CHANGED");
+    expect(f.state.evidence).toEqual([]);
+  } finally {
+    await f.close();
+  }
+});
+test("an ended run with unknown outcome can still be cancelled, or completed by evidence", async () => {
+  const f = await finished();
+  try {
+    expect((await f.call("zap-sync")).json().status).toBe("OUTCOME_UNKNOWN");
+    expect((await f.call("zap-sync")).json().status).toBe("OUTCOME_UNKNOWN");
+    expect((await f.call("zap-import")).json().status).toBe("COMPLETED");
+  } finally {
+    await f.close();
+  }
+  const g = await finished();
+  try {
+    await g.call("zap-sync");
+    expect((await g.call("cancel-tracking", { confirmed: true })).json().status).toBe("CANCELLED");
+  } finally {
+    await g.close();
   }
 });

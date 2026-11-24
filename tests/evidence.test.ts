@@ -7,6 +7,7 @@ import {
   judge,
   type Facts,
 } from "../src/integrations/zap/evidence.ts";
+import { reconcile } from "../src/integrations/zap/exceptions.ts";
 import { parseRunLog } from "../src/integrations/zap/run-log.ts";
 import type { ZapClient } from "../src/integrations/zap/client.ts";
 
@@ -31,8 +32,8 @@ const receipts = {
   active: { scanId: "0", associatedAt: new Date("2026-11-23T08:14:55.232Z") },
 };
 function facts(change: Partial<Facts> = {}): Facts {
-  return {
-    contract: 1,
+  const base = {
+    contract: "1.1",
     sessionKey: "a".repeat(64),
     target: "http://juice-shop:3000/",
     log: parse(),
@@ -47,17 +48,20 @@ function facts(change: Partial<Facts> = {}): Facts {
         {
           origin: "http://juice-shop:3000",
           rules: { complete: 51, skipped: 1, running: 0, pending: 0, unknown: 0 },
+          requests: 1968,
+          named: [],
         },
       ],
     },
     scope: {
       spider: { evidence: "OBSERVED_TARGET_ORIGIN", count: 95 },
-      active: { evidence: "OBSERVED_TARGET_ORIGIN", count: 1968 },
+      active: { evidence: "OBSERVED_TARGET_ORIGIN", count: 1968, mismatches: [] },
     },
     credentialInLog: false,
     resourceFailure: false,
     ...change,
   };
+  return { ...base, reconciliations: reconcile(base) };
 }
 test("real completed run parses without anomalies and satisfies the contract with complete API facts", () => {
   const log = parse();
@@ -153,7 +157,7 @@ const host = facts().progress.hosts[0];
 test.each<[string, Partial<Facts>, string]>([
   ["key in log", { credentialInLog: true }, "CREDENTIAL_IN_LOG"],
   ["resource failure", { resourceFailure: true }, "RESOURCE_FAILURE"],
-  ["other contract", { contract: 2 }, "CONTRACT_VERSION"],
+  ["other contract", { contract: "2" }, "CONTRACT_VERSION"],
   ["running listing", { listing: { ...facts().listing, active: { state: "RUNNING", progress: 99 } } }, "LISTING_NOT_FINISHED"],
   ["missing listing", { listing: { ...facts().listing, active: null } }, "LISTING_NOT_FINISHED"],
   ["no hosts", { progress: { hosts: [] } }, "PROGRESS_HOST"],
@@ -162,8 +166,8 @@ test.each<[string, Partial<Facts>, string]>([
   ["pending rule", { progress: { hosts: [{ ...host, rules: { ...host.rules, pending: 1 } }] } }, "PROGRESS_RULES"],
   ["unknown rule state", { progress: { hosts: [{ ...host, rules: { ...host.rules, unknown: 1 } }] } }, "PROGRESS_RULES"],
   ["rule count differs", { progress: { hosts: [{ ...host, rules: { ...host.rules, complete: 50 } }] } }, "PROGRESS_RULES"],
-  ["no messages", { scope: { ...facts().scope, active: { evidence: "EMPTY", count: 0 } } }, "ACTIVE_SCOPE"],
-  ["message outside", { scope: { ...facts().scope, active: { evidence: "OUT_OF_SCOPE", count: 1968 } } }, "ACTIVE_SCOPE"],
+  ["no messages", { scope: { ...facts().scope, active: { evidence: "EMPTY", count: 0, mismatches: [] } } }, "ACTIVE_SCOPE"],
+  ["message outside", { scope: { ...facts().scope, active: { evidence: "OUT_OF_SCOPE", count: 1968, mismatches: [] } } }, "ACTIVE_SCOPE"],
   ["messages not all retained", { counts: { requests: 1969, alerts: 24 } }, "MESSAGES_INCOMPLETE"],
   ["unknown request count", { counts: { requests: null, alerts: 24 } }, "MESSAGES_INCOMPLETE"],
   ["alerts differ", { attributedAlerts: 23 }, "ALERTS_INCOMPLETE"],
@@ -203,7 +207,8 @@ function provider(change: Partial<Record<keyof ZapClient, unknown>> = {}) {
     inspectRuns: async (kind: string) => [row(kind)],
     inspectAlertIds: async () => 24,
     scanProgress: async () => facts().progress,
-    inspectDemoScope: async (kind: "spider" | "active") => facts().scope[kind],
+    inspectDemoScope: async () => facts().scope.spider,
+    readActiveMessages: async () => facts().scope.active,
     mentionsCredential: (text: string) => text.includes("fixture-key"),
     ...change,
   } as unknown as ZapClient;

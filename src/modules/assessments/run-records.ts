@@ -86,6 +86,9 @@ async function observe(zap: ZapClient, kind: Kind, id: string) {
 function trackingStatus(kind: Kind, state: string | null, current: string) {
   if (state === "RUNNING")
     return kind === "active" ? "ACTIVE_SCAN_RUNNING" : "SPIDER_RUNNING";
+  // The scans ended, but only contract evidence can establish how. Not a success, failure
+  // or cancellation. Import may still complete it, and the operator may still cancel it.
+  if (kind === "active" && state === "FINISHED") return "OUTCOME_UNKNOWN";
   return state === "NOT_STARTED" && current === "PENDING"
     ? "INITIALIZING"
     : current;
@@ -222,7 +225,9 @@ export function registerRunRecords(
         }
         if (!isClosed(status)) {
           const latest = samples.find((r) => r.kind === "active") ?? samples[0];
-          status = trackingStatus(latest.kind, latest.state, status);
+          // A finished active run says nothing while another saved run is still running.
+          if (latest.state === "RUNNING" || !samples.some((r) => r.state === "RUNNING"))
+            status = trackingStatus(latest.kind, latest.state, status);
           await tx.assessment.update({ where: { id }, data: { status } });
           // startedAt is the first time an associated run was observed RUNNING.
           if (samples.some((r) => r.outcome === "RUNNING"))
@@ -275,6 +280,7 @@ export function registerRunRecords(
         "ACTIVE_SCAN_RUNNING",
         "INITIALIZING",
         "SPIDER_RUNNING",
+        "OUTCOME_UNKNOWN",
       ].includes(snapshot.status)
     )
       throw new ApiError(409, "ASSESSMENT_INELIGIBLE");
@@ -344,6 +350,7 @@ export function registerRunRecords(
             "ACTIVE_SCAN_RUNNING",
             "INITIALIZING",
             "SPIDER_RUNNING",
+            "OUTCOME_UNKNOWN",
           ].includes(status)
         )
           throw new ApiError(409, "ASSESSMENT_INELIGIBLE");

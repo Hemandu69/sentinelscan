@@ -129,6 +129,11 @@ test.runIf(process.env.npm_lifecycle_event === "test:run-storage")(
                   evidence: "OBSERVED_TARGET_ORIGIN",
                   count: 5,
                 }),
+                readActiveMessages: async () => ({
+                  evidence: "OBSERVED_TARGET_ORIGIN",
+                  count: 5,
+                  mismatches: [],
+                }),
                 mentionsCredential: () => false,
                 scanProgress: async () => ({
                   hosts: [
@@ -141,6 +146,8 @@ test.runIf(process.env.npm_lifecycle_event === "test:run-storage")(
                         pending: 0,
                         unknown: 0,
                       },
+                      requests: 1968,
+                      named: [],
                     },
                   ],
                 }),

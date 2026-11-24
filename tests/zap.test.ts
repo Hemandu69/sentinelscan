@@ -403,7 +403,7 @@ test("scan progress reports host and rule counts without an outcome", async () =
   });
   const result = await client.scanProgress("0");
   expect(result).toEqual({
-    hosts: [{ origin: "http://juice-shop:3000", rules: { complete: 2, skipped: 1, running: 1, pending: 1, unknown: 1 } }],
+    hosts: [{ origin: "http://juice-shop:3000", rules: { complete: 2, skipped: 1, running: 1, pending: 1, unknown: 1 }, requests: 6, named: [] }],
   });
   expect(JSON.stringify(result)).not.toMatch(/SUCCEEDED|outcome/);
 });
@@ -416,4 +416,34 @@ test("an unsaved provider session is refused with its own code", async () => {
   await expect(reply({ sessionLocation: "" }).sessionLocation()).rejects.toThrow("ZAP_SESSION_NOT_SAVED");
   await expect(reply({}).sessionLocation()).rejects.toThrow("ZAP_MALFORMED_RESPONSE");
   expect(await reply({ sessionLocation: "/zap/a.session" }).sessionLocation()).toBe("/zap/a.session");
+});
+test("active messages keep only origin, differing hosts and times", async () => {
+  const client = createZapClient(key, 1000, async (input) => {
+    const url = new URL(String(input));
+    if (url.pathname.endsWith("/messagesIds/")) return Response.json({ messagesIds: ["2", "1"] });
+    const id = url.searchParams.get("id")!;
+    return Response.json({
+      message: {
+        id,
+        timestamp: "1795502186864",
+        requestHeader: `GET http://juice-shop:3000/a?secret=1 HTTP/1.1\r\nHost: ${id === "1" ? "169.254.169.254" : "juice-shop:3000"}\r\nCookie: private`,
+        responseBody: "private",
+      },
+    });
+  });
+  const result = await client.readActiveMessages("0");
+  expect(result).toEqual({ evidence: "OBSERVED_TARGET_ORIGIN", count: 2, mismatches: [{ messageId: "1", host: "169.254.169.254", sentAt: 1795502186864 }] });
+  expect(JSON.stringify(result)).not.toMatch(/secret|private/);
+  expect(await client.inspectDemoScope("active", "0")).toEqual({ evidence: "OUT_OF_SCOPE", count: 2 });
+});
+test("scan progress keeps the two contract rules and the request total", async () => {
+  const plugin = (id: string, requests: string) => ({ Plugin: ["Name " + id, id, "release", "Complete", "5", requests, "0"] });
+  const read = (...rows: object[]) => reply({ scanProgress: ["http://juice-shop:3000", { HostProcess: rows }] }).scanProgress("0");
+  const [host] = (await read(plugin("6", "9"), plugin("90034", "13"), plugin("20015", "3"))).hosts;
+  expect(host).toMatchObject({ requests: 25, named: [{ id: "90034", requests: 13 }, { id: "20015", requests: 3 }] });
+  expect((await read(plugin("6", "x"))).hosts[0].requests).toBeNull();
+});
+test("completed assessments summarize only verified evidence of both runs", async () => {
+  const { summarizeEvidence } = await import("../src/modules/assessments/records.ts");
+  expect(summarizeEvidence([])).toBeNull();
 });

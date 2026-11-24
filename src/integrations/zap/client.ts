@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { parseEnv } from "node:util";
 import { z } from "zod";
 import { ApiError } from "../../lib/errors.ts";
+import { hostHeaderRule, rawSocketRule, type HostMismatch } from "./exceptions.ts";
 import { alertSchema, normalize, pageSchema } from "./findings.ts";
 
 const limit = 1024 * 1024;
@@ -112,7 +113,100 @@ export function createZapClient(
       throw malformed();
     return response.alertsIds;
   }
+  // Reads every message attributed to one active scan, or none. Only the request URL's
+  // origin, the Host header and the sending time are kept.
+  async function readActiveMessages(scanId: string) {
+    const target = "http://juice-shop:3000";
+    const messageIds = async () =>
+      (
+        await view(
+          "ascan/view/messagesIds",
+          z.object({
+            messagesIds: z
+              .array(
+                z
+                  .union([z.string(), z.number().int()])
+                  .transform(String)
+                  .pipe(z.string().regex(/^\d{1,12}$/)),
+              )
+              .max(16000),
+          }),
+          { scanId },
+        )
+      ).messagesIds;
+    const ids = await messageIds();
+    if (new Set(ids).size !== ids.length) throw malformed();
+    const deadline = Date.now() + 300000;
+    let next = 0,
+      outside = 0,
+      unknown = 0,
+      stopped = false;
+    const mismatches: HostMismatch[] = [];
+    async function readOne(id: string) {
+      if (Date.now() > deadline) throw new ApiError(504, "ZAP_TIMEOUT");
+      const { message } = await view(
+        "core/view/message",
+        z.object({
+          message: z.object({
+            id: z.union([z.string(), z.number().int()]).transform(String),
+            requestHeader: z.string().max(65536),
+            timestamp: z.union([z.string(), z.number()]).optional(),
+          }),
+        }),
+        { id },
+        // ZAP returns whole bodies here. Only the request header is kept.
+        32 * limit,
+      );
+      if (message.id !== id) throw malformed();
+      // Relative request-targets lack a verified scheme. Leave scope unknown.
+      const lines = message.requestHeader.split(/\r?\n/);
+      const uri = /^\S+ (\S+) HTTP\/\d(?:\.\d)?$/.exec(lines[0])?.[1] ?? "";
+      if (!URL.canParse(uri)) unknown++;
+      else {
+        const url = new URL(uri);
+        if (url.origin !== target || url.username || url.password) outside++;
+      }
+      const hosts = lines
+        .filter((line) => /^host:/i.test(line))
+        .map((line) => line.slice(5).trim().toLowerCase());
+      if (hosts.length > 1) unknown++;
+      else if (hosts.length && hosts[0] !== "juice-shop:3000")
+        mismatches.push({
+          messageId: id,
+          host: hosts[0].slice(0, 253),
+          sentAt: /^\d{1,15}$/.test(String(message.timestamp))
+            ? Number(message.timestamp)
+            : 0,
+        });
+    }
+    await Promise.all(
+      Array.from({ length: 4 }, async () => {
+        try {
+          while (!stopped && next < ids.length) await readOne(ids[next++]);
+        } catch (error) {
+          stopped = true;
+          throw error;
+        }
+      }),
+    );
+    const after = new Set(await messageIds());
+    if (after.size !== ids.length || ids.some((id) => !after.has(id)))
+      throw new ApiError(409, "OBSERVATION_CHANGED");
+    mismatches.sort((a, b) => Number(a.messageId) - Number(b.messageId));
+    return {
+      evidence: !ids.length
+        ? "EMPTY"
+        : outside
+          ? "OUT_OF_SCOPE"
+          : unknown
+            ? "UNKNOWN"
+            : "OBSERVED_TARGET_ORIGIN",
+      count: ids.length,
+      mismatches,
+    };
+  }
   return {
+    readActiveMessages,
     // Compares in memory so that no caller needs the key itself.
     mentionsCredential(text: string) {
       return Boolean(key?.trim()) && text.includes(key!);
@@ -214,73 +308,12 @@ export function createZapClient(
         );
         return classify(results);
       }
-      const messageIds = async () =>
-        (
-          await view(
-            "ascan/view/messagesIds",
-            z.object({
-              messagesIds: z
-                .array(
-                  z
-                    .union([z.string(), z.number().int()])
-                    .transform(String)
-                    .pipe(z.string().regex(/^\d{1,12}$/)),
-                )
-                .max(16000),
-            }),
-            { scanId },
-          )
-        ).messagesIds;
-      const ids = await messageIds();
-      if (new Set(ids).size !== ids.length) throw malformed();
-      // Read every message or none. The ID schema above bounds the total, and a
-      // deadline bounds the time. A partial sample must never establish scope.
-      const urls: string[] = [];
-      const deadline = Date.now() + 300000;
-      let next = 0,
-        outside = false,
-        stopped = false;
-      async function readOne(id: string) {
-        if (Date.now() > deadline) throw new ApiError(504, "ZAP_TIMEOUT");
-        const { message } = await view(
-          "core/view/message",
-          z.object({
-            message: z.object({
-              id: z.union([z.string(), z.number().int()]).transform(String),
-              requestHeader: z.string().max(65536),
-            }),
-          }),
-          { id },
-          // ZAP returns whole bodies here. Only the request header is kept.
-          32 * limit,
-        );
-        if (message.id !== id) throw malformed();
-        // Relative request-targets lack a verified scheme. Leave scope unknown.
-        const lines = message.requestHeader.split(/\r?\n/);
-        const uri = /^\S+ (\S+) HTTP\/\d(?:\.\d)?$/.exec(lines[0])?.[1] ?? "";
-        const hosts = lines
-          .filter((line) => /^host:/i.test(line))
-          .map((line) => line.slice(5).trim().toLowerCase());
-        if (hosts.some((host) => host !== "juice-shop:3000"))
-          outside = true;
-        urls.push(hosts.length > 1 ? "" : uri);
-      }
-      await Promise.all(
-        Array.from({ length: 4 }, async () => {
-          try {
-            while (!stopped && !outside && next < ids.length)
-              await readOne(ids[next++]);
-          } catch (error) {
-            stopped = true;
-            throw error;
-          }
-        }),
-      );
-      if (outside) return { evidence: "OUT_OF_SCOPE", count: ids.length };
-      const after = new Set(await messageIds());
-      if (after.size !== ids.length || ids.some((id) => !after.has(id)))
-        throw new ApiError(409, "OBSERVATION_CHANGED");
-      return classify(urls);
+      // Without contract reconciliation any differing Host header stays out of scope.
+      const { evidence, count, mismatches } = await readActiveMessages(scanId);
+      return {
+        evidence: mismatches.length ? "OUT_OF_SCOPE" : evidence,
+        count,
+      };
     },
     // Describes what ZAP reports per host and rule. This is an observation and
     // never an outcome: a scan stopped during its last rules can look complete.
@@ -316,8 +349,19 @@ export function createZapClient(
         if (typeof host !== "string" || typeof rules === "string")
           throw malformed();
         const counts = { complete: 0, skipped: 0, running: 0, pending: 0, unknown: 0 };
+        const named: { id: string; name: string; status: string; requests: number | null }[] = [];
+        let requests: number | null = 0;
         for (const { Plugin } of rules.HostProcess) {
           const status = Plugin[3];
+          const sent = total(Plugin[5]);
+          requests = requests === null || sent === null ? null : requests + sent;
+          if ([hostHeaderRule.id, rawSocketRule.id].includes(Plugin[1]))
+            named.push({
+              id: Plugin[1],
+              name: Plugin[0].slice(0, 120),
+              status: status.slice(0, 40),
+              requests: sent,
+            });
           if (status === "Complete") counts.complete++;
           else if (status === "Pending") counts.pending++;
           else if (/^\d{1,3}%$/.test(status)) counts.running++;
@@ -331,6 +375,8 @@ export function createZapClient(
               ? origin.origin
               : null,
           rules: counts,
+          requests,
+          named,
         });
       }
       return { hosts };
