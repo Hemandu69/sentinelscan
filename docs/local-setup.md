@@ -1,6 +1,6 @@
 # Local setup on Windows
 
-Use Windows PowerShell, Docker Desktop with the Linux engine, Node.js 24 and npm. Place the API and infrastructure checkouts beside each other. The examples start in their common parent directory. Keep the docs checkout separate.
+Use Windows PowerShell, Docker Desktop with the Linux engine, Node.js 24 and npm. The folders are already beside each other. The examples start in their common parent directory. Keep the docs checkout separate.
 
 ## Configure private local settings
 

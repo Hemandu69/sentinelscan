@@ -1,8 +1,8 @@
 # SentinelScan · The Watchtower
 
-Part of [SentinelScan](https://github.com/Hemandu69/sentinelscan), a local college project. Clone it beside the other checkouts.
+Part of [SentinelScan](../README.md), a local college project.
 
-This independent frontend repository contains the Overview, website workspaces, assessments, findings and printable report. It runs on Windows with Node.js 24 and npm. Start the SentinelScan API on port 4000, then run these commands from this checkout.
+This folder contains the Overview, website workspaces, assessments, findings and printable report. It runs on Windows with Node.js 24 and npm. Start the SentinelScan API on port 4000, then run these commands from this checkout.
 
 ```powershell
 npm.cmd ci

@@ -1,8 +1,8 @@
 # SentinelScan infrastructure
 
-Part of [SentinelScan](https://github.com/Hemandu69/sentinelscan), a local college project. Clone it beside the other checkouts.
+Part of [SentinelScan](../README.md), a local college project.
 
-Docker Compose project `sentinelscan-infrastructure` for Docker Desktop in Linux container mode. It runs PostgreSQL 17, OWASP ZAP and the Juice Shop demonstration site. The web and API applications live in their own repositories.
+Docker Compose project `sentinelscan-infrastructure` for Docker Desktop in Linux container mode. It runs PostgreSQL 17, OWASP ZAP and the Juice Shop demonstration site.
 
 | Service | Host address | Network address | Notes |
 |---|---|---|---|

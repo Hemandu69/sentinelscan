@@ -1,8 +1,8 @@
 # Development
 
-Keep the four checkouts beside each other. Change code, migrations and configuration in their own repository, and update the documents here when a shared interface changes. State what ran, and whether provider, database and input were real or fixtures.
+Change code, migrations and configuration in their own folder, and update the documents here when a shared interface changes. State what ran, and whether provider, database and input were real or fixtures.
 
-| Checkout | Checks |
+| Folder | Checks |
 |---|---|
 | API | `npm.cmd test`, `npm.cmd run typecheck`, `npm.cmd run lint` |
 | Web | the same, `npm.cmd run build`, and the fixture browser scripts in `tests/browser` |

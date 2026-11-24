@@ -38,9 +38,9 @@ docker-volumes/
 evidence/
 scan-evidence/
 scan-results/
-reports/
+/reports/
 
-# Independent component checkouts
-sentinelscan-api/
-sentinelscan-infrastructure/
-sentinelscan-web/
+# Reviewed source files that the patterns above would hide
+!.env.example
+!sentinelscan-api/prisma/migrations/**/*.sql
+!sentinelscan-api/tests/fixtures/*.log

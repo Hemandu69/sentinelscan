@@ -14,16 +14,16 @@ One operator uses it on one Windows machine. There are no accounts and no cloud 
 
 An unproven scan ends as "outcome unknown" and imports nothing. There is no security score, and the absence of a finding does not show that a website is secure. AI explanations are optional and off by default.
 
-## Repositories
+## Contents
 
-| Repository | Responsibility |
+| Folder | Responsibility |
 |---|---|
-| sentinelscan (this one) | Documentation |
-| sentinelscan-web | Watchtower, the Next.js interface |
-| sentinelscan-api | Fastify API, PostgreSQL persistence, ZAP control, evidence, reports |
-| sentinelscan-infrastructure | PostgreSQL, ZAP, Juice Shop and the outbound firewall |
+| [docs](docs) | Documentation |
+| [sentinelscan-web](sentinelscan-web) | Watchtower, the Next.js interface |
+| [sentinelscan-api](sentinelscan-api) | Fastify API, PostgreSQL persistence, ZAP control, evidence, reports |
+| [sentinelscan-infrastructure](sentinelscan-infrastructure) | PostgreSQL, ZAP, Juice Shop and the outbound firewall |
 
-Clone all four beside each other.
+![Watchtower dashboard](sentinelscan-web/screenshots/watchtower-light.png)
 
 | Part | Version |
 |---|---|
@@ -36,11 +36,11 @@ Clone all four beside each other.
 
 Needs Windows, Docker Desktop with the Linux engine, Node.js 24, and Chrome or Edge for PDFs. First create each private `.env` from its `.env.example`; [local setup](docs/local-setup.md) explains every step.
 
-| Checkout | Commands |
+| Folder | Commands |
 |---|---|
-| infrastructure | `docker --context desktop-linux compose up -d --no-recreate --wait postgres zap juice-shop`, then `docker --context desktop-linux build -t sentinelscan-egress-guard:1 egress-guard` |
-| api | `npm.cmd ci`, `npm.cmd run generate`, `npm.cmd run migrate` (fresh database only), `npm.cmd start` |
-| web | `npm.cmd ci`, `npm.cmd run build`, `npm.cmd start` |
+| sentinelscan-infrastructure | `docker --context desktop-linux compose up -d --no-recreate --wait postgres zap juice-shop`, then `docker --context desktop-linux build -t sentinelscan-egress-guard:1 egress-guard` |
+| sentinelscan-api | `npm.cmd ci`, `npm.cmd run generate`, `npm.cmd run migrate` (fresh database only), `npm.cmd start` |
+| sentinelscan-web | `npm.cmd ci`, `npm.cmd run build`, `npm.cmd start` |
 
 Open http://127.0.0.1:3000.
 
