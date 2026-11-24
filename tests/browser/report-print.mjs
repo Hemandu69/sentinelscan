@@ -106,7 +106,7 @@ try {
         await page.addScriptTag({ content: f.text });
   }
   await render();
-  const print = page.getByRole("button", { name: "Print or save PDF" });
+  const print = page.getByRole("button", { name: "Print / Save as PDF" });
   await print.waitFor();
   assert.equal(
     await page.locator("article h3").textContent(),

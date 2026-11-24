@@ -43,14 +43,19 @@ export function AssessmentReport({ id }: { id: string }) {
     ...new Set(["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO", ...groups.keys()]),
   ];
   return (
-    <main className="assessment-report">
+    <main
+      className="assessment-report"
+      // Present only once every record is loaded and reconciled. The API waits for it.
+      data-assessment-id={report && !error ? report.assessment.id : undefined}
+      data-findings={report && !error ? report.items.length : undefined}
+    >
       <nav aria-label="Report actions">
         <Link href={"/assessments/" + encodeURIComponent(id)}>
           Back to assessment
         </Link>
         {report && (
           <button className="primary" onClick={() => window.print()}>
-            Print or save PDF
+            Print / Save as PDF
           </button>
         )}
       </nav>

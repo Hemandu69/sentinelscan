@@ -11,6 +11,7 @@ import {
 } from "../lib/records";
 import { Navigation } from "./navigation";
 import { AssessmentSummary, IssuesView } from "./issues";
+import { ReportActions } from "./report-actions";
 import { RunReceipts } from "./run-receipts";
 import { ObservedRun } from "./observed-run";
 
@@ -243,6 +244,7 @@ export function RecordsPage({
                     {row.finishedAt ? date(row.finishedAt) : "Unrecorded"}
                   </p>
                 </section>
+                <ReportActions id={id} status={row.status} />
                 {row.findingCount !== null && (
                   <AssessmentSummary id={id} evidence={row.evidence} />
                 )}
@@ -283,7 +285,9 @@ export function RecordsPage({
                       {row.findingCount} recorded. Raw scanner records stay available
                       under each issue.
                     </p>
-                    <Link href={"/assessments/" + row.id + "/report"}>Open printable assessment report</Link>
+                    <Link href={"/assessments/" + row.id + "/report"}>
+                      Open the report page
+                    </Link>
                     {row.severities?.map((group) => (
                       <p key={group.severity}>
                         {group.severity} · {group.count}

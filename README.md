@@ -37,7 +37,7 @@ Saved scan records list operator receipts. Enter the run ID and session fingerpr
 
 ## Checks
 
-Completed assessments include a printable report. Open **Assessments**, select the completed check, then choose **Open printable assessment report**. The report reads all persisted findings for the assessment and checks the count and severity totals before enabling **Print or save PDF**. Choose the browser's PDF destination to save locally. Incomplete assessments retain an unknown result count.
+Completed assessments include a printable report. Open **Assessments**, select the completed check, then use **Generate Report**, **Preview Report** or **Download PDF Report**, or open the report page. The report reads all persisted findings for the assessment and checks the count and severity totals before enabling **Print / Save as PDF**. Choose the browser's PDF destination to save locally. Incomplete assessments retain an unknown result count.
 
 ```powershell
 npm.cmd test

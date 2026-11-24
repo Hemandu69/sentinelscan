@@ -3,6 +3,8 @@
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import path from "node:path";
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 const require = createRequire(import.meta.url);
 const [driver, binary] = process.argv.slice(2);
 const { chromium } = require(path.resolve(driver));
@@ -36,7 +38,11 @@ function reset(change = {}) {
     ai: false,
     analysed: false,
     guide: false,
+    reports: 0,
+    damaged: false,
     posts: [],
+    files: [],
+    tamper: false,
     ...change,
   });
 }
@@ -54,6 +60,13 @@ const summary = () => ({
       ? "The operator cancelled tracking in SentinelScan. This did not stop any ZAP scan."
       : null,
   findingCount: state.status === "COMPLETED" ? state.findings : null,
+});
+const reportPdf = Buffer.from("%PDF-1.4\n<< /Type /Page >>\n" + "x".repeat(1200) + "\n%%EOF\n");
+const reportHash = createHash("sha256").update(reportPdf).digest("hex");
+const reportId = (i) => `00000000-0000-4000-8000-00000000000${i}`;
+const reports = () => ({
+  assessmentId: id, assessmentStatus: state.status, canGenerate: state.status === "COMPLETED",
+  reports: Array.from({ length: state.reports }, (_, i) => ({ id: reportId(state.reports - i), generatedAt: now, filename: `sentinelscan-report-${id}.pdf`, contentType: "application/pdf", sha256: reportHash, available: !state.damaged, size: state.damaged ? null : reportPdf.length, pages: state.damaged ? null : 1, outdated: i > 0 })),
 });
 const second = "29cf23db-3901-4c11-be04-cd6b499db65f";
 function issues() {
@@ -131,6 +144,10 @@ function reply(method, url, body) {
       })),
       hasMore: false,
     };
+  if (p.endsWith("/reports")) {
+    if (method === "POST") state.reports++;
+    return reports();
+  }
   if (p === "/api/v1/analysis/status")
     return { enabled: Boolean(state.ai), reason: state.ai ? null : "AI_DISABLED", provider: state.ai ? "anthropic" : null, model: state.ai ? "claude-opus-5-5" : null, storageReady: true };
   if (p === "/api/v1/issues") return issues();
@@ -161,6 +178,10 @@ async function check(name, options, work) {
     if (body) state.posts.push([url.pathname, body]);
     const failure = Object.entries(state.fail).find(([suffix]) => url.pathname.endsWith(suffix))?.[1];
     if (failure === "abort") return route.abort();
+    if (!failure && url.pathname.endsWith("/pdf")) {
+      state.files = [...(state.files ?? []), url.pathname + url.search];
+      return route.fulfill({ status: 200, headers: { ...cors, "Access-Control-Expose-Headers": "X-Report-Sha256", "Content-Type": "application/pdf", "X-Report-Sha256": reportHash }, body: state.tamper ? Buffer.from("%PDF-changed") : reportPdf }).catch(() => {});
+    }
     return route
       .fulfill({
         status: failure?.[0] ?? 200,
@@ -443,6 +464,71 @@ try {
     await page.getByText("0 of 1 issue has an AI interpretation").waitFor();
     assert.doesNotMatch(await page.locator("article").innerText(), /AI interpretation/);
   });
+  for (const [theme, width] of [["light", 1280], ["dark", 360]])
+    await check(`report is generated, previewed and downloaded (${theme} ${width})`, { state: { status: "COMPLETED", findings: 2 }, viewport: { width, height: 800 } }, async (page) => {
+      await page.addInitScript((t) => localStorage.setItem("watchtower-theme", t), theme);
+      await page.goto(web + "/assessments/" + id);
+      await page.getByText("No PDF report has been generated yet.").waitFor();
+      assert.equal(await page.getByRole("button", { name: "Download PDF Report" }).count(), 0);
+      await page.getByRole("button", { name: "Generate Report", exact: true }).click();
+      await page.getByText("PDF report available.").waitFor();
+      await page.getByText(/Last generated .* · 1 page · 2 KB/).waitFor();
+      const waiting = page.waitForEvent("download");
+      await page.getByRole("button", { name: "Download PDF Report" }).click();
+      const download = await waiting;
+      assert.equal(download.suggestedFilename(), `sentinelscan-report-${id}.pdf`);
+      assert.deepEqual(readFileSync(await download.path()), reportPdf);
+      await page.getByText("Download started:").waitFor();
+      await page.getByRole("button", { name: "Preview Report" }).click();
+      await page.getByTitle(/Report generated/).waitFor({ state: "attached" });
+      assert.deepEqual(state.files, [`/api/v1/assessments/${id}/reports/${reportId(1)}/pdf`, `/api/v1/assessments/${id}/reports/${reportId(1)}/pdf?view=preview`]);
+      assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+      await page.getByRole("button", { name: "Close preview" }).click();
+      assert.deepEqual(await audit(page), []);
+      await page.getByRole("button", { name: "Regenerate Report" }).click();
+      await page.getByText("Earlier reports (1)").waitFor();
+      assert.equal(state.posts.length, 2);
+      assert.ok(state.posts.every(([p, body]) => p === `/api/v1/assessments/${id}/reports` && Object.keys(body).length === 0));
+    });
+  await check("report actions show progress and ignore repeated clicks", { state: { status: "COMPLETED", findings: 2 } }, async (page) => {
+    await page.goto(web + "/assessments/" + id);
+    const button = page.getByRole("button", { name: "Generate Report", exact: true });
+    await button.waitFor();
+    let release;
+    state.hold = new Promise((resolve) => (release = resolve));
+    await button.dblclick();
+    await page.getByText("This can take up to a minute").waitFor();
+    assert.equal(await page.getByRole("button", { name: "Generating…" }).isDisabled(), true);
+    release();
+    await page.getByText("PDF report available.").waitFor();
+    assert.equal(state.posts.length, 1);
+  });
+  await check("report failures are explained and keep the earlier report", { state: { status: "COMPLETED", findings: 2, reports: 1, fail: {} } }, async (page) => {
+    await page.goto(web + "/assessments/" + id);
+    await page.getByText("PDF report available.").waitFor();
+    state.fail["/reports"] = [502, "REPORT_PAGE_REFUSED"];
+    await page.getByRole("button", { name: "Regenerate Report" }).click();
+    await page.getByRole("alert").filter({ hasText: "no PDF was created" }).waitFor();
+    assert.equal(await page.getByRole("button", { name: "Download PDF Report" }).isEnabled(), true);
+    state.fail = {};
+    state.tamper = true;
+    await page.getByRole("button", { name: "Download PDF Report" }).click();
+    await page.getByRole("alert").filter({ hasText: "checksum" }).waitFor();
+    assert.equal(await page.getByText("Download started").count(), 0);
+  });
+  await check("a damaged report offers generation only", { state: { status: "COMPLETED", findings: 2, reports: 1, damaged: true } }, async (page) => {
+    await page.goto(web + "/assessments/" + id);
+    await page.getByText("missing or damaged").waitFor();
+    assert.equal(await page.getByRole("button", { name: "Download PDF Report" }).count(), 0);
+    await page.getByRole("button", { name: "Generate Report", exact: true }).waitFor();
+  });
+  for (const [status, reason] of [["PENDING", /once the assessment is completed/], ["OUTCOME_UNKNOWN", /outcome is not verified/], ["CANCELLED", /Tracking was cancelled/]])
+    await check("no report controls for " + status, { state: { status, reports: 1 } }, async (page) => {
+      await page.goto(web + "/assessments/" + id);
+      await page.getByText(reason).waitFor();
+      for (const name of ["Download PDF Report", "Preview Report", "Generate Report", "Regenerate Report"])
+        assert.equal(await page.getByRole("button", { name }).count(), 0);
+    });
   await check("cancellation is confirmed and described as local", {}, async (page) => {
     const prompts = [];
     let accept = false;
@@ -483,9 +569,9 @@ try {
   await check("built report page produces a PDF from fixtures in dark theme", { state: { status: "COMPLETED", findings: 1 } }, async (page) => {
     await page.addInitScript(() => localStorage.setItem("watchtower-theme", "dark"));
     await page.goto(web + "/assessments/" + id + "/report");
-    await page.getByRole("button", { name: "Print or save PDF" }).waitFor();
+    await page.getByRole("button", { name: "Print / Save as PDF" }).waitFor();
     await page.emulateMedia({ media: "print" });
-    assert.equal(await page.getByRole("button", { name: "Print or save PDF" }).isVisible(), false);
+    assert.equal(await page.getByRole("button", { name: "Print / Save as PDF" }).isVisible(), false);
     assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector("main")).backgroundColor), "rgb(255, 255, 255)");
     assert.equal((await page.pdf({ format: "A4" })).subarray(0, 4).toString(), "%PDF");
   });

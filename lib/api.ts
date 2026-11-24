@@ -10,6 +10,7 @@ export type Site = {
 // Import collects complete evidence twice, each bounded at about five minutes.
 export function timeoutFor(path: string) {
   if (path.endsWith("/zap-import")) return 900000;
+  if (path.endsWith("/reports")) return 90000;
   // Two attempts, each with one transport retry on the server.
   if (/\/issues\/[a-f0-9]{64}\/analysis$/.test(path)) return 600000;
   if (path.endsWith("/zap-association") || path.endsWith("/zap-sync"))
@@ -54,6 +55,35 @@ async function send(
   signal: AbortSignal,
   payload?: unknown,
 ): Promise<unknown> {
+  return (await open(path, signal, payload)).json();
+}
+// Returns a verified PDF. An error page or a changed file is never offered as a report.
+export async function requestPdf(path: string, signal: AbortSignal) {
+  try {
+    const res = await open(path, signal);
+    const type = res.headers.get("content-type") ?? "";
+    const digest = res.headers.get("x-report-sha256") ?? "";
+    const data = await res.arrayBuffer();
+    const head = new TextDecoder("latin1").decode(data.slice(0, 5));
+    if (!/^application\/pdf\b/.test(type) || head !== "%PDF-")
+      throw new RequestFailure("The local API did not return a PDF file.");
+    const hash = [...new Uint8Array(await crypto.subtle.digest("SHA-256", data))]
+      .map((byte) => byte.toString(16).padStart(2, "0"))
+      .join("");
+    if (hash !== digest)
+      throw new RequestFailure("The PDF does not match its checksum.");
+    return new Blob([data], { type: "application/pdf" });
+  } catch (error) {
+    if (!signal.aborted && error instanceof Error && error.name === "TimeoutError")
+      throw new RequestTimeout("The local API did not respond in time.");
+    throw error;
+  }
+}
+async function open(
+  path: string,
+  signal: AbortSignal,
+  payload?: unknown,
+): Promise<Response> {
   const root = new URL(base);
   if (
     !["http://127.0.0.1:4000", "http://localhost:4000"].includes(root.origin) ||
@@ -153,6 +183,25 @@ async function send(
       ANALYSIS_BUSY: "An analysis is already running.",
       ANALYSIS_STORAGE_UNAVAILABLE:
         "The analysis table is not available. Apply the reviewed migration first.",
+      ASSESSMENT_NOT_COMPLETED:
+        "A report needs a completed assessment with verified results.",
+      REPORT_NOT_FOUND: "This report does not exist. Generate one first.",
+      REPORT_FILE_MISSING:
+        "The stored report file is missing. Generate a new report.",
+      REPORT_CORRUPT:
+        "The stored report no longer matches its checksum. Generate a new report.",
+      REPORT_BUSY: "Another report is being generated. Try again shortly.",
+      REPORT_TIMEOUT: "The report took too long to generate.",
+      REPORT_BROWSER_MISSING:
+        "Chrome or Edge is needed to generate PDF files, and neither was found.",
+      REPORT_PAGE_UNAVAILABLE:
+        "The report page could not be opened. Check that Watchtower is running.",
+      REPORT_PAGE_REFUSED:
+        "The report page could not verify its data, so no PDF was created.",
+      REPORT_CONTENT_MISMATCH:
+        "The report did not match the recorded findings, so no PDF was created.",
+      REPORT_RENDER_FAILED: "The PDF could not be generated.",
+      REPORT_STORAGE_FAILED: "The PDF could not be stored.",
       ISSUE_NOT_FOUND: "This issue no longer exists. Reload the page.",
       TOO_MANY_FINDINGS: "There are too many findings to show at once.",
       ZAP_SESSION_NOT_SAVED:
@@ -181,7 +230,7 @@ async function send(
         (reasons.length ? " Missing evidence: " + reasons.join(", ") + "." : ""),
     );
   }
-  return res.json();
+  return res;
 }
 export function readSites(body: unknown): Site[] {
   if (

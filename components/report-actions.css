@@ -1,0 +1,31 @@
+.report-actions {
+  padding-bottom: 22px;
+}
+.report-actions .dialog-actions {
+  justify-content: flex-start;
+  margin: 14px 0;
+}
+.report-actions .primary,
+.report-actions .refresh {
+  min-height: 40px;
+}
+.report-preview {
+  border: 1px solid var(--line);
+  margin: 14px 0;
+  padding: 14px;
+}
+.report-preview .dialog-head {
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.report-preview h3 {
+  font: 600 16px var(--sans);
+}
+.report-preview iframe {
+  display: block;
+  width: 100%;
+  height: min(75vh, 900px);
+  border: 0;
+  background: #fff;
+}
