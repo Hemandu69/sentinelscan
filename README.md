@@ -1,5 +1,7 @@
 # SentinelScan · The Watchtower
 
+Part of [SentinelScan](https://github.com/Hemandu69/sentinelscan), a local college project. Clone it beside the other checkouts.
+
 This independent frontend repository contains the Overview, website workspaces, assessments, findings and printable report. It runs on Windows with Node.js 24 and npm. Start the SentinelScan API on port 4000, then run these commands from this checkout.
 
 ```powershell
@@ -8,6 +10,8 @@ npm.cmd run dev
 ```
 
 Open http://127.0.0.1:3000. The browser defaults to http://127.0.0.1:4000 for Fastify. To change between supported loopback hostnames, copy .env.example to .env.local and set NEXT_PUBLIC_API_BASE_URL. Match the Fastify host and browser-origin settings to the addresses in use. The frontend requires no secrets or external fonts.
+
+![Watchtower dashboard](screenshots/watchtower-light.png)
 
 ## Overview data
 
